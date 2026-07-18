@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../../core/database/generation_run.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/conversation.dart';
 import '../../../core/services/chat/chat_service.dart';
+import 'message_render_model.dart';
 
 /// Controller for managing conversation state in the home page.
 ///
@@ -50,22 +52,29 @@ class ChatController extends ChangeNotifier {
   /// Selected version per message group (groupId -> selected version index).
   Map<String, int> _versionSelections = <String, int>{};
   Map<String, int> get versionSelections => _versionSelections;
+  final Map<String, GenerationRunState> _generationStatesByMessageId =
+      <String, GenerationRunState>{};
+  Map<String, GenerationRunState> get generationStatesByMessageId =>
+      Map<String, GenerationRunState>.unmodifiable(
+        _generationStatesByMessageId,
+      );
 
   /// Cached collapsed messages (invalidated on notifyListeners).
   List<ChatMessage>? _collapsedCache;
   Map<String, int>? _collapsedIdToIndex;
   Map<String, List<ChatMessage>>? _groupCache;
   List<ChatMessage>? _messagesWithVisibleGroupsCache;
+  List<MessageRenderModel>? _renderModelsCache;
 
   /// Conversation IDs that are currently generating (streaming).
   final Set<String> _loadingConversationIds = <String>{};
   Set<String> get loadingConversationIds => _loadingConversationIds;
 
   /// Active stream subscriptions per conversation.
-  final Map<String, StreamSubscription<dynamic>> _conversationStreams =
+  final Map<String, StreamSubscription<dynamic>> _generationStreams =
       <String, StreamSubscription<dynamic>>{};
   Map<String, StreamSubscription<dynamic>> get conversationStreams =>
-      _conversationStreams;
+      _generationStreams;
 
   // ============================================================================
   // Getters
@@ -76,6 +85,22 @@ class ChatController extends ChangeNotifier {
     final cid = _currentConversation?.id;
     if (cid == null) return false;
     return _loadingConversationIds.contains(cid);
+  }
+
+  bool get isSelectedAnswerStreaming {
+    for (final message in _messages.reversed) {
+      if (message.role != 'assistant') continue;
+      final groupId = message.groupId ?? message.id;
+      final siblings = groupedMessages[groupId] ?? <ChatMessage>[message];
+      if (!siblings.any((sibling) => sibling.isStreaming)) continue;
+      final selectedVersion =
+          _versionSelections[groupId] ?? siblings.first.version;
+      for (final sibling in siblings) {
+        if (sibling.version == selectedVersion) return sibling.isStreaming;
+      }
+      return false;
+    }
+    return false;
   }
 
   /// Get the ChatService instance.
@@ -104,6 +129,7 @@ class ChatController extends ChangeNotifier {
       _loadedStartIndex = 0;
       _totalMessageCount = 0;
       _versionSelections = <String, int>{};
+      _generationStatesByMessageId.clear();
     }
     notifyListeners();
   }
@@ -148,6 +174,7 @@ class ChatController extends ChangeNotifier {
     _loadedStartIndex = 0;
     _totalMessageCount = 0;
     _versionSelections = <String, int>{};
+    _generationStatesByMessageId.clear();
     notifyListeners();
     return conversation;
   }
@@ -178,6 +205,7 @@ class ChatController extends ChangeNotifier {
     _loadedStartIndex = 0;
     _totalMessageCount = 0;
     _versionSelections = <String, int>{};
+    _generationStatesByMessageId.clear();
   }
 
   void _loadInitialMessageWindow(String conversationId) {
@@ -546,6 +574,15 @@ class ChatController extends ChangeNotifier {
     return false;
   }
 
+  bool appendPersistedTailMessages(List<ChatMessage> messages) {
+    var windowChanged = false;
+    for (final message in messages) {
+      windowChanged = appendPersistedTailMessage(message) || windowChanged;
+    }
+    _loadVersionSelections();
+    return windowChanged;
+  }
+
   /// Update a message in the list.
   void updateMessageInList(String messageId, ChatMessage updatedMessage) {
     final index = _messages.indexWhere((m) => m.id == messageId);
@@ -553,6 +590,17 @@ class ChatController extends ChangeNotifier {
       _messages[index] = updatedMessage;
       notifyListeners();
     }
+  }
+
+  void setGenerationState(
+    String messageId,
+    GenerationRunState state, {
+    bool notify = false,
+  }) {
+    if (_generationStatesByMessageId[messageId] == state) return;
+    _generationStatesByMessageId[messageId] = state;
+    invalidateCache();
+    if (notify) notifyListeners();
   }
 
   /// Update a message by ID with optional new values.
@@ -686,30 +734,30 @@ class ChatController extends ChangeNotifier {
   // ============================================================================
 
   /// Get the stream subscription for a conversation.
-  StreamSubscription<dynamic>? getStreamSubscription(String conversationId) {
-    return _conversationStreams[conversationId];
+  StreamSubscription<dynamic>? getStreamSubscription(String messageId) {
+    return _generationStreams[messageId];
   }
 
   /// Set a stream subscription for a conversation.
   void setStreamSubscription(
-    String conversationId,
+    String messageId,
     StreamSubscription<dynamic> subscription,
   ) {
-    _conversationStreams[conversationId] = subscription;
+    _generationStreams[messageId] = subscription;
   }
 
   /// Cancel and remove a stream subscription.
-  Future<void> cancelStreamSubscription(String conversationId) async {
-    final sub = _conversationStreams.remove(conversationId);
+  Future<void> cancelStreamSubscription(String messageId) async {
+    final sub = _generationStreams.remove(messageId);
     await sub?.cancel();
   }
 
   /// Cancel all stream subscriptions.
   Future<void> cancelAllStreams() async {
-    for (final sub in _conversationStreams.values) {
+    for (final sub in _generationStreams.values) {
       await sub.cancel();
     }
-    _conversationStreams.clear();
+    _generationStreams.clear();
   }
 
   // ============================================================================
@@ -744,10 +792,16 @@ class ChatController extends ChangeNotifier {
     for (final gid in order) {
       final vers = byGroup[gid]!;
       final sel = _versionSelections[gid];
-      final idx = (sel != null && sel >= 0 && sel < vers.length)
-          ? sel
-          : (vers.length - 1);
-      out.add(vers[idx]);
+      ChatMessage? selected;
+      if (sel != null) {
+        for (final candidate in vers) {
+          if (candidate.version == sel) {
+            selected = candidate;
+            break;
+          }
+        }
+      }
+      out.add(selected ?? vers.last);
     }
 
     return out;
@@ -887,6 +941,20 @@ class ChatController extends ChangeNotifier {
     return _groupCache ??= groupMessagesByGroup();
   }
 
+  List<MessageRenderModel> get messageRenderModels {
+    return _renderModelsCache ??= MessageRenderModelProjector.project(
+      messages: collapsedMessages,
+      byGroup: groupedMessages,
+      versionSelections: _versionSelections,
+      versionCounts: {
+        for (final entry in groupedMessages.entries)
+          entry.key: entry.value.length,
+      },
+      generationStates: _generationStatesByMessageId,
+      contextDividerIndex: -1,
+    );
+  }
+
   /// Group all messages by their groupId.
   Map<String, List<ChatMessage>> groupMessagesByGroup() {
     final Map<String, List<ChatMessage>> byGroup =
@@ -911,6 +979,7 @@ class ChatController extends ChangeNotifier {
     _collapsedIdToIndex = null;
     _groupCache = null;
     _messagesWithVisibleGroupsCache = null;
+    _renderModelsCache = null;
   }
 
   @override

@@ -1,11 +1,38 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../models/chat_message.dart';
+import '../../models/chat_model_target.dart';
 import '../../models/conversation.dart';
 import '../../../utils/sandbox_path_resolver.dart';
 import '../../../utils/app_directories.dart';
+
+typedef ConversationDeletedCallback =
+    Future<void> Function(String conversationId);
+
+final class ChatGenerationBatchTarget {
+  const ChatGenerationBatchTarget({
+    required this.target,
+    required this.assistantMessage,
+  });
+
+  final ChatModelTarget target;
+  final ChatMessage assistantMessage;
+}
+
+final class ChatGenerationBatchResult {
+  ChatGenerationBatchResult({
+    required this.userMessage,
+    required List<ChatGenerationBatchTarget> targets,
+  }) : targets = List.unmodifiable(targets);
+
+  final ChatMessage userMessage;
+  final List<ChatGenerationBatchTarget> targets;
+
+  ChatGenerationBatchTarget get primaryTarget => targets.first;
+}
 
 class ChatService extends ChangeNotifier {
   static const String _conversationsBoxName = 'conversations';
@@ -31,6 +58,21 @@ class ChatService extends ChangeNotifier {
   final Map<String, List<Map<String, dynamic>>> _temporaryToolEvents =
       <String, List<Map<String, dynamic>>>{};
   final Map<String, String> _temporaryGeminiThoughtSigs = <String, String>{};
+  ConversationDeletedCallback? _conversationDeletedCallback;
+
+  void setConversationDeletedCallback(ConversationDeletedCallback? callback) {
+    _conversationDeletedCallback = callback;
+  }
+
+  Future<void> _notifyConversationDeleted(String conversationId) async {
+    final callback = _conversationDeletedCallback;
+    if (callback == null) return;
+    try {
+      await callback(conversationId);
+    } catch (error) {
+      debugPrint('[ChatService] conversation deletion callback failed: $error');
+    }
+  }
 
   // Localized default title for new conversations; set by UI on startup.
   String _defaultConversationTitle = 'New Chat';
@@ -336,6 +378,7 @@ class ChatService extends ChangeNotifier {
     if (_currentConversationId == id) {
       _currentConversationId = null;
     }
+    unawaited(_notifyConversationDeleted(id));
   }
 
   Future<void> deleteConversation(String id) async {
@@ -345,6 +388,8 @@ class ChatService extends ChangeNotifier {
         await _deleteDraftConversation(id) ||
         await _deletePersistedConversation(id);
     if (!deleted) return;
+
+    await _notifyConversationDeleted(id);
 
     // Delete orphaned files (not referenced by any remaining conversation)
     await _cleanupOrphanUploads();
@@ -410,15 +455,22 @@ class ChatService extends ChangeNotifier {
         .map((conversation) => conversation.id)
         .toList(growable: false);
 
-    var deleted = false;
+    final deletedConversationIds = <String>[];
     for (final conversationId in draftConversationIds) {
-      deleted = await _deleteDraftConversation(conversationId) || deleted;
+      if (await _deleteDraftConversation(conversationId)) {
+        deletedConversationIds.add(conversationId);
+      }
     }
     for (final conversationId in persistedConversationIds) {
-      deleted = await _deletePersistedConversation(conversationId) || deleted;
+      if (await _deletePersistedConversation(conversationId)) {
+        deletedConversationIds.add(conversationId);
+      }
     }
 
-    if (!deleted) return;
+    if (deletedConversationIds.isEmpty) return;
+    for (final conversationId in deletedConversationIds) {
+      await _notifyConversationDeleted(conversationId);
+    }
     await _cleanupOrphanUploads();
     notifyListeners();
   }
@@ -913,6 +965,66 @@ class ChatService extends ChangeNotifier {
 
     notifyListeners();
     return message;
+  }
+
+  Future<ChatGenerationBatchResult> beginSendGenerationBatch({
+    required String conversationId,
+    required String userContent,
+    required List<ChatModelTarget> targets,
+  }) async {
+    if (!_initialized) await init();
+    final normalizedTargets = <ChatModelTarget>[];
+    for (final target in targets) {
+      if (!target.isValid || normalizedTargets.contains(target)) continue;
+      normalizedTargets.add(target);
+      if (normalizedTargets.length > 5) {
+        throw ArgumentError.value(targets, 'targets');
+      }
+    }
+    if (normalizedTargets.isEmpty) {
+      throw ArgumentError.value(targets, 'targets');
+    }
+
+    final userMessage = await addMessage(
+      conversationId: conversationId,
+      role: 'user',
+      content: userContent,
+    );
+    final assistantMessages = <ChatMessage>[];
+    String? groupId;
+    for (final (index, target) in normalizedTargets.indexed) {
+      final message = await addMessage(
+        conversationId: conversationId,
+        role: 'assistant',
+        content: '',
+        modelId: target.modelId,
+        providerId: target.providerKey,
+        isStreaming: true,
+        groupId: groupId,
+        version: index,
+      );
+      groupId ??= message.id;
+      assistantMessages.add(message);
+    }
+
+    final conversation = _conversationForMessages(conversationId);
+    if (conversation != null && groupId != null) {
+      conversation.versionSelections[groupId] = 0;
+      if (!isTemporaryConversation(conversationId)) {
+        await conversation.save();
+      }
+    }
+
+    return ChatGenerationBatchResult(
+      userMessage: userMessage,
+      targets: <ChatGenerationBatchTarget>[
+        for (final (index, target) in normalizedTargets.indexed)
+          ChatGenerationBatchTarget(
+            target: target,
+            assistantMessage: assistantMessages[index],
+          ),
+      ],
+    );
   }
 
   ChatMessage? _cachedTemporaryMessage(String messageId) {
@@ -1469,6 +1581,11 @@ class ChatService extends ChangeNotifier {
   Future<void> clearAllData() async {
     if (!_initialized) return;
 
+    final deletedConversationIds = <String>{
+      ..._conversationsBox.keys.map((key) => key.toString()),
+      ..._draftConversations.keys,
+    };
+
     await _messagesBox.clear();
     await _conversationsBox.clear();
     await _toolEventsBox.clear();
@@ -1485,6 +1602,9 @@ class ChatService extends ChangeNotifier {
         await uploadDir.delete(recursive: true);
       }
     } catch (_) {}
+    for (final conversationId in deletedConversationIds) {
+      await _notifyConversationDeleted(conversationId);
+    }
     notifyListeners();
   }
 

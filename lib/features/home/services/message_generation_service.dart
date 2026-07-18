@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
+import '../../../core/models/chat_model_target.dart';
 import '../../../core/models/conversation.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/services/api/chat_api_service.dart';
@@ -121,6 +122,7 @@ class MessageGenerationService {
     required String modelId,
     ToolApprovalService? approvalService,
     AskUserInteractionService? askUserService,
+    bool restrictToSearchTools = false,
   }) async {
     final cfg = settings.getProviderConfig(providerKey);
     final kind = ProviderConfig.classify(
@@ -197,13 +199,16 @@ class MessageGenerationService {
     await messageBuilderService.inlineLocalImages(apiMessages);
 
     // Prepare tools
-    final toolDefs = generationController.buildToolDefinitions(
+    var toolDefs = generationController.buildToolDefinitions(
       settings,
       assistant,
       providerKey,
       modelId,
       hasBuiltInSearch,
     );
+    if (restrictToSearchTools) {
+      toolDefs = multiModelSafeToolDefinitions(toolDefs);
+    }
     final onToolCall = toolDefs.isNotEmpty
         ? generationController.buildToolCallHandler(
             settings,
@@ -222,6 +227,19 @@ class MessageGenerationService {
     );
   }
 
+  /// Concurrent model branches only expose the side-effect-free search tool.
+  @visibleForTesting
+  static List<Map<String, dynamic>> multiModelSafeToolDefinitions(
+    Iterable<Map<String, dynamic>> definitions,
+  ) {
+    return definitions
+        .where((definition) {
+          final function = definition['function'];
+          return function is Map && function['name'] == 'search_web';
+        })
+        .toList(growable: false);
+  }
+
   /// Create user message from input data.
   Future<ChatMessage> createUserMessage({
     required String conversationId,
@@ -235,6 +253,22 @@ class MessageGenerationService {
         input,
         assistant: assistant,
       ),
+    );
+  }
+
+  Future<ChatGenerationBatchResult> beginSendGenerationBatch({
+    required String conversationId,
+    required ChatInputData input,
+    required Assistant? assistant,
+    required List<ChatModelTarget> targets,
+  }) {
+    return chatService.beginSendGenerationBatch(
+      conversationId: conversationId,
+      userContent: buildPersistedUserMessageContent(
+        input,
+        assistant: assistant,
+      ),
+      targets: targets,
     );
   }
 

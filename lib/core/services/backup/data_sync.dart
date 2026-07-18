@@ -16,6 +16,7 @@ import '../../models/chat_message.dart';
 import '../../models/conversation.dart';
 import '../chat/chat_service.dart';
 import '../../../utils/app_directories.dart';
+import 'backup_settings_validator.dart';
 
 class DataSync {
   final ChatService chatService;
@@ -711,6 +712,7 @@ class DataSync {
               'assistant_tags_v1', // Ordered tag list [{id,name}]
               'assistant_tag_map_v1', // assistantId -> tagId
               'assistant_tag_collapsed_v1', // tagId -> bool
+              'chat_model_selections_v1', // ordered chat model combinations
             };
 
             for (final entry in map.entries) {
@@ -719,7 +721,16 @@ class DataSync {
 
               if (mergeableKeys.contains(key)) {
                 // Special handling for mergeable configurations
-                if (key == 'assistants_v1' && existing.containsKey(key)) {
+                if (key == 'chat_model_selections_v1') {
+                  await prefs.restoreSingle(
+                    key,
+                    BackupSettingsValidator.mergeChatModelSelectionsForRestore(
+                      incomingValue: newValue as String,
+                      existingValue: existing[key] as String?,
+                    ),
+                  );
+                } else if (key == 'assistants_v1' &&
+                    existing.containsKey(key)) {
                   // Merge assistants by ID with field-level rules.
                   // Preserve local avatar if already set to avoid clearing/overwriting.
                   try {
