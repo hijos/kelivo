@@ -1909,6 +1909,8 @@
   "searchProviderQueritDescription": "Querit Search API for LLM applications. Returns real-time web results with site, time, country, and language filters.",
   "searchServiceNameGrok": "Grok",
   "searchProviderGrokDescription": "Grok search via xAI Responses API. Uses web and X search tools and returns cited sources.",
+  "searchServiceNameOpenAIResponses": "OpenAI Responses",
+  "searchProviderOpenAIResponsesDescription": "OpenAI Responses API web search. Uses the web search tool and returns cited sources.",
   "searchServicesDialogCountryOptional": "Country/region (optional)",
   "searchServicesDialogLanguageOptional": "Language (optional)",
   "searchServicesDialogTimeFilterOptional": "Time filter (optional)",

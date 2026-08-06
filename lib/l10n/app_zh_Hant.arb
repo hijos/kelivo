@@ -1525,6 +1525,8 @@
   "searchProviderQueritDescription": "面向 LLM 應用的 Querit 搜尋 API。返回即時網頁結果，並支援站點、時間、國家和語言過濾。",
   "searchServiceNameGrok": "Grok",
   "searchProviderGrokDescription": "透過 xAI Responses API 使用 Grok 搜尋。呼叫網頁和 X 搜尋工具，並返回帶引用的來源。",
+  "searchServiceNameOpenAIResponses": "OpenAI Responses",
+  "searchProviderOpenAIResponsesDescription": "透過 OpenAI Responses API 進行網頁搜尋。呼叫網頁搜尋工具，並返回帶引用的來源。",
   "searchServicesDialogCountryOptional": "國家/地區（可選）",
   "searchServicesDialogLanguageOptional": "語言（可選）",
   "searchServicesDialogTimeFilterOptional": "時間過濾（可選）",

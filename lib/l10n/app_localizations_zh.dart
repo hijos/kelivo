@@ -4418,6 +4418,13 @@ class AppLocalizationsZh extends AppLocalizations {
       '通过 xAI Responses API 使用 Grok 搜索。调用网页和 X 搜索工具，并返回带引用的来源。';
 
   @override
+  String get searchServiceNameOpenAIResponses => 'OpenAI Responses';
+
+  @override
+  String get searchProviderOpenAIResponsesDescription =>
+      '通过 OpenAI Responses API 进行网页搜索。调用网页搜索工具，并返回带引用的来源。';
+
+  @override
   String get searchServicesDialogCountryOptional => '国家/地区（可选）';
 
   @override
@@ -9780,6 +9787,13 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '通过 xAI Responses API 使用 Grok 搜索。调用网页和 X 搜索工具，并返回带引用的来源。';
 
   @override
+  String get searchServiceNameOpenAIResponses => 'OpenAI Responses';
+
+  @override
+  String get searchProviderOpenAIResponsesDescription =>
+      '通过 OpenAI Responses API 进行网页搜索。调用网页搜索工具，并返回带引用的来源。';
+
+  @override
   String get searchServicesDialogCountryOptional => '国家/地区（可选）';
 
   @override
@@ -15139,6 +15153,13 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String get searchProviderGrokDescription =>
       '透過 xAI Responses API 使用 Grok 搜尋。呼叫網頁和 X 搜尋工具，並返回帶引用的來源。';
+
+  @override
+  String get searchServiceNameOpenAIResponses => 'OpenAI Responses';
+
+  @override
+  String get searchProviderOpenAIResponsesDescription =>
+      '透過 OpenAI Responses API 進行網頁搜尋。呼叫網頁搜尋工具，並返回帶引用的來源。';
 
   @override
   String get searchServicesDialogCountryOptional => '國家/地區（可選）';

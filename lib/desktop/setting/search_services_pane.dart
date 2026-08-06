@@ -8,6 +8,7 @@ import '../../utils/brand_assets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:uuid/uuid.dart';
 import '../../shared/widgets/ios_switch.dart';
+import '../../shared/widgets/bounded_integer_field.dart';
 import '../../theme/app_font_weights.dart';
 
 class DesktopSearchServicesPane extends StatefulWidget {
@@ -202,7 +203,18 @@ class _DesktopSearchServicesPaneState extends State<DesktopSearchServicesPane> {
                       icon: lucide.Lucide.History,
                       label: l10n.searchServicesPageTimeoutSeconds,
                       value: common.timeout ~/ 1000,
-                      onMinus: common.timeout > 1000
+                      minValue: SearchCommonOptions.minTimeoutMs ~/ 1000,
+                      maxValue: SearchCommonOptions.maxTimeoutMs ~/ 1000,
+                      inputKey: const ValueKey('search_timeout_input_desktop'),
+                      onValueSubmitted: (seconds) => context
+                          .read<SettingsProvider>()
+                          .setSearchCommonOptions(
+                            SearchCommonOptions(
+                              resultSize: common.resultSize,
+                              timeout: seconds * 1000,
+                            ),
+                          ),
+                      onMinus: common.timeout > SearchCommonOptions.minTimeoutMs
                           ? () => context
                                 .read<SettingsProvider>()
                                 .setSearchCommonOptions(
@@ -212,7 +224,7 @@ class _DesktopSearchServicesPaneState extends State<DesktopSearchServicesPane> {
                                   ),
                                 )
                           : null,
-                      onPlus: common.timeout < 30000
+                      onPlus: common.timeout < SearchCommonOptions.maxTimeoutMs
                           ? () => context
                                 .read<SettingsProvider>()
                                 .setSearchCommonOptions(
@@ -439,24 +451,27 @@ class _ToggleRow extends StatelessWidget {
   }
 }
 
-class _StepperRow extends StatefulWidget {
+class _StepperRow extends StatelessWidget {
   const _StepperRow({
     required this.icon,
     required this.label,
     required this.value,
     this.onMinus,
     this.onPlus,
+    this.onValueSubmitted,
+    this.minValue = 1,
+    this.maxValue = 120,
+    this.inputKey,
   });
   final IconData icon;
   final String label;
   final int value;
   final VoidCallback? onMinus;
   final VoidCallback? onPlus;
-  @override
-  State<_StepperRow> createState() => _StepperRowState();
-}
-
-class _StepperRowState extends State<_StepperRow> {
+  final ValueChanged<int>? onValueSubmitted;
+  final int minValue;
+  final int maxValue;
+  final Key? inputKey;
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -467,7 +482,7 @@ class _StepperRowState extends State<_StepperRow> {
           SizedBox(
             width: 36,
             child: Icon(
-              widget.icon,
+              icon,
               size: 18,
               color: cs.onSurface.withValues(alpha: 0.9),
             ),
@@ -475,7 +490,7 @@ class _StepperRowState extends State<_StepperRow> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              widget.label,
+              label,
               style: TextStyle(
                 fontSize: 15,
                 color: cs.onSurface.withValues(alpha: 0.9),
@@ -484,27 +499,36 @@ class _StepperRowState extends State<_StepperRow> {
           ),
           _StepperButton(
             icon: lucide.Lucide.Minus,
-            enabled: widget.onMinus != null,
-            onTap: widget.onMinus ?? () {},
+            enabled: onMinus != null,
+            onTap: onMinus ?? () {},
           ),
           const SizedBox(width: 8),
-          Container(
-            width: 42,
-            alignment: Alignment.center,
-            child: Text(
-              '${widget.value}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: AppFontWeights.regular,
-                color: cs.onSurface.withValues(alpha: 0.9),
+          if (onValueSubmitted == null)
+            Container(
+              width: 42,
+              alignment: Alignment.center,
+              child: Text(
+                '$value',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: AppFontWeights.regular,
+                  color: cs.onSurface.withValues(alpha: 0.9),
+                ),
               ),
+            )
+          else
+            BoundedIntegerField(
+              key: inputKey,
+              value: value,
+              minValue: minValue,
+              maxValue: maxValue,
+              onChanged: onValueSubmitted!,
             ),
-          ),
           const SizedBox(width: 8),
           _StepperButton(
             icon: lucide.Lucide.Plus,
-            enabled: widget.onPlus != null,
-            onTap: widget.onPlus ?? () {},
+            enabled: onPlus != null,
+            onTap: onPlus ?? () {},
           ),
         ],
       ),
@@ -604,6 +628,7 @@ class _BrandBadge extends StatelessWidget {
     if (s is SerperOptions) return 'serper';
     if (s is QueritOptions) return 'querit';
     if (s is GrokOptions) return 'grok';
+    if (s is OpenAIResponsesOptions) return 'openai';
     return 'search';
   }
 
@@ -790,6 +815,15 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
     'customUrl': TextEditingController(text: GrokOptions.defaultUrl),
     'systemPrompt': TextEditingController(
       text: GrokOptions.defaultSystemPrompt,
+    ),
+    'openaiModel': TextEditingController(
+      text: OpenAIResponsesOptions.defaultModel,
+    ),
+    'openaiCustomUrl': TextEditingController(
+      text: OpenAIResponsesOptions.defaultUrl,
+    ),
+    'openaiSystemPrompt': TextEditingController(
+      text: OpenAIResponsesOptions.defaultSystemPrompt,
     ),
   };
 
@@ -1013,6 +1047,36 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
             maxLines: 5,
           ),
         ];
+      case 'openai_responses':
+        return [
+          TextField(
+            controller: _controllers['apiKey'],
+            decoration: deco(l10n.searchServicesDialogApiKey),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiModel'],
+            decoration: _deskInputDecoration(context).copyWith(
+              labelText: l10n.searchServicesDialogModel,
+              hintText: OpenAIResponsesOptions.defaultModel,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiCustomUrl'],
+            decoration: _deskInputDecoration(context).copyWith(
+              labelText: l10n.searchServicesFieldCustomUrlOptional,
+              hintText: OpenAIResponsesOptions.defaultUrl,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiSystemPrompt'],
+            decoration: deco(l10n.searchServicesDialogSystemPrompt),
+            minLines: 3,
+            maxLines: 5,
+          ),
+        ];
       case 'searxng':
         return [
           TextField(
@@ -1121,6 +1185,14 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
           customUrl: _controllers['customUrl']!.text.trim(),
           systemPrompt: _controllers['systemPrompt']!.text,
         );
+      case 'openai_responses':
+        return OpenAIResponsesOptions(
+          id: id,
+          apiKey: _controllers['apiKey']!.text,
+          model: _controllers['openaiModel']!.text.trim(),
+          customUrl: _controllers['openaiCustomUrl']!.text.trim(),
+          systemPrompt: _controllers['openaiSystemPrompt']!.text,
+        );
       case 'bing_local':
       default:
         return BingLocalOptions(id: id);
@@ -1199,6 +1271,15 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
       _controllers['model'] = TextEditingController(text: s.model);
       _controllers['customUrl'] = TextEditingController(text: s.customUrl);
       _controllers['systemPrompt'] = TextEditingController(
+        text: s.systemPrompt,
+      );
+    } else if (s is OpenAIResponsesOptions) {
+      _controllers['apiKey'] = TextEditingController(text: s.apiKey);
+      _controllers['openaiModel'] = TextEditingController(text: s.model);
+      _controllers['openaiCustomUrl'] = TextEditingController(
+        text: s.customUrl,
+      );
+      _controllers['openaiSystemPrompt'] = TextEditingController(
         text: s.systemPrompt,
       );
     }
@@ -1346,6 +1427,36 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
         const SizedBox(height: 12),
         TextField(
           controller: _controllers['systemPrompt'],
+          decoration: deco(l10n.searchServicesDialogSystemPrompt),
+          minLines: 3,
+          maxLines: 5,
+        ),
+      ];
+    } else if (s is OpenAIResponsesOptions) {
+      return [
+        TextField(
+          controller: _controllers['apiKey'],
+          decoration: deco(l10n.searchServicesDialogApiKey),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['openaiModel'],
+          decoration: _deskInputDecoration(context).copyWith(
+            labelText: l10n.searchServicesDialogModel,
+            hintText: OpenAIResponsesOptions.defaultModel,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['openaiCustomUrl'],
+          decoration: _deskInputDecoration(context).copyWith(
+            labelText: l10n.searchServicesFieldCustomUrlOptional,
+            hintText: OpenAIResponsesOptions.defaultUrl,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['openaiSystemPrompt'],
           decoration: deco(l10n.searchServicesDialogSystemPrompt),
           minLines: 3,
           maxLines: 5,
@@ -1538,6 +1649,15 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
         systemPrompt: _controllers['systemPrompt']!.text,
       );
     }
+    if (s is OpenAIResponsesOptions) {
+      return OpenAIResponsesOptions(
+        id: s.id,
+        apiKey: _controllers['apiKey']!.text,
+        model: _controllers['openaiModel']!.text.trim(),
+        customUrl: _controllers['openaiCustomUrl']!.text.trim(),
+        systemPrompt: _controllers['openaiSystemPrompt']!.text,
+      );
+    }
     return s;
   }
 }
@@ -1571,6 +1691,7 @@ class _ServiceTypeChipsState extends State<_ServiceTypeChips> {
     (type: 'serper', brand: 'serper'),
     (type: 'querit', brand: 'querit'),
     (type: 'grok', brand: 'grok'),
+    (type: 'openai_responses', brand: 'openai'),
   ];
   @override
   Widget build(BuildContext context) {
@@ -1655,6 +1776,8 @@ String _serviceTypeName(BuildContext context, String type) {
       return l10n.searchServiceNameQuerit;
     case 'grok':
       return l10n.searchServiceNameGrok;
+    case 'openai_responses':
+      return l10n.searchServiceNameOpenAIResponses;
     default:
       return type;
   }

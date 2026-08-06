@@ -4603,6 +4603,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Grok search via xAI Responses API. Uses web and X search tools and returns cited sources.';
 
   @override
+  String get searchServiceNameOpenAIResponses => 'OpenAI Responses';
+
+  @override
+  String get searchProviderOpenAIResponsesDescription =>
+      'OpenAI Responses API web search. Uses the web search tool and returns cited sources.';
+
+  @override
   String get searchServicesDialogCountryOptional => 'Country/region (optional)';
 
   @override

@@ -10,6 +10,7 @@ import '../../../shared/widgets/snackbar.dart';
 import '../../../utils/brand_assets.dart';
 import '../../../core/services/haptics.dart';
 import '../../../shared/widgets/ios_switch.dart';
+import '../../../shared/widgets/bounded_integer_field.dart';
 import '../../../theme/app_font_weights.dart';
 
 class SearchServicesPage extends StatefulWidget {
@@ -219,6 +220,10 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
       required int value,
       required VoidCallback onMinus,
       required VoidCallback onPlus,
+      ValueChanged<int>? onValueSubmitted,
+      int minValue = 1,
+      int maxValue = 120,
+      Key? inputKey,
       String? unit,
     }) {
       return Row(
@@ -226,13 +231,22 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
         children: [
           _SmallTactileIcon(icon: Lucide.Minus, onTap: onMinus, enabled: true),
           const SizedBox(width: 8),
-          Text(
-            unit == null ? '$value' : '$value$unit',
-            style: TextStyle(
-              fontSize: 14,
-              color: cs.onSurface.withValues(alpha: 0.8),
+          if (onValueSubmitted == null)
+            Text(
+              unit == null ? '$value' : '$value$unit',
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurface.withValues(alpha: 0.8),
+              ),
+            )
+          else
+            BoundedIntegerField(
+              key: inputKey,
+              value: value,
+              minValue: minValue,
+              maxValue: maxValue,
+              onChanged: onValueSubmitted,
             ),
-          ),
           const SizedBox(width: 8),
           _SmallTactileIcon(icon: Lucide.Plus, onTap: onPlus, enabled: true),
         ],
@@ -382,7 +396,20 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
                       ),
                       stepper(
                         value: common.timeout ~/ 1000,
-                        onMinus: common.timeout > 1000
+                        minValue: SearchCommonOptions.minTimeoutMs ~/ 1000,
+                        maxValue: SearchCommonOptions.maxTimeoutMs ~/ 1000,
+                        inputKey: const ValueKey('search_timeout_input_mobile'),
+                        onValueSubmitted: (seconds) =>
+                            context.read<SettingsProvider>().updateSettings(
+                              settings.copyWith(
+                                searchCommonOptions: SearchCommonOptions(
+                                  resultSize: common.resultSize,
+                                  timeout: seconds * 1000,
+                                ),
+                              ),
+                            ),
+                        onMinus:
+                            common.timeout > SearchCommonOptions.minTimeoutMs
                             ? () => context
                                   .read<SettingsProvider>()
                                   .updateSettings(
@@ -394,7 +421,8 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
                                     ),
                                   )
                             : () {},
-                        onPlus: common.timeout < 30000
+                        onPlus:
+                            common.timeout < SearchCommonOptions.maxTimeoutMs
                             ? () => context
                                   .read<SettingsProvider>()
                                   .updateSettings(
@@ -588,6 +616,7 @@ class _BrandBadge extends StatelessWidget {
     if (s is SerperOptions) return 'serper';
     if (s is QueritOptions) return 'querit';
     if (s is GrokOptions) return 'grok';
+    if (s is OpenAIResponsesOptions) return 'openai';
     return 'search';
   }
 
@@ -762,6 +791,10 @@ class _AddServiceBottomSheetState extends State<_AddServiceBottomSheet> {
       {'type': 'serper', 'name': l10n.searchServiceNameSerper},
       {'type': 'querit', 'name': l10n.searchServiceNameQuerit},
       {'type': 'grok', 'name': l10n.searchServiceNameGrok},
+      {
+        'type': 'openai_responses',
+        'name': l10n.searchServiceNameOpenAIResponses,
+      },
     ];
     return ListView.builder(
       key: const ValueKey('service_list'),
@@ -828,6 +861,8 @@ class _AddServiceBottomSheetState extends State<_AddServiceBottomSheet> {
         return l10n.searchServiceNameQuerit;
       case 'grok':
         return l10n.searchServiceNameGrok;
+      case 'openai_responses':
+        return l10n.searchServiceNameOpenAIResponses;
       default:
         return '';
     }
@@ -1145,6 +1180,41 @@ class _AddServiceBottomSheetState extends State<_AddServiceBottomSheet> {
             maxLines: 5,
           ),
         ];
+      case 'openai_responses':
+        return [
+          buildTextField(
+            key: 'apiKey',
+            label: l10n.searchServicesDialogApiKey,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return l10n.searchServicesAddDialogApiKeyRequired;
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          buildTextField(
+            key: 'openaiModel',
+            label: l10n.searchServicesDialogModel,
+            hint: OpenAIResponsesOptions.defaultModel,
+            initialValue: OpenAIResponsesOptions.defaultModel,
+          ),
+          const SizedBox(height: 12),
+          buildTextField(
+            key: 'openaiCustomUrl',
+            label: l10n.searchServicesFieldCustomUrlOptional,
+            hint: OpenAIResponsesOptions.defaultUrl,
+            initialValue: OpenAIResponsesOptions.defaultUrl,
+          ),
+          const SizedBox(height: 12),
+          buildTextField(
+            key: 'openaiSystemPrompt',
+            label: l10n.searchServicesDialogSystemPrompt,
+            initialValue: OpenAIResponsesOptions.defaultSystemPrompt,
+            minLines: 3,
+            maxLines: 5,
+          ),
+        ];
       case 'searxng':
         return [
           buildTextField(
@@ -1264,6 +1334,14 @@ class _AddServiceBottomSheetState extends State<_AddServiceBottomSheet> {
           customUrl: _controllers['customUrl']!.text.trim(),
           systemPrompt: _controllers['systemPrompt']!.text,
         );
+      case 'openai_responses':
+        return OpenAIResponsesOptions(
+          id: id,
+          apiKey: _controllers['apiKey']!.text,
+          model: _controllers['openaiModel']!.text.trim(),
+          customUrl: _controllers['openaiCustomUrl']!.text.trim(),
+          systemPrompt: _controllers['openaiSystemPrompt']!.text,
+        );
       default:
         return BingLocalOptions(id: id);
     }
@@ -1353,6 +1431,15 @@ class _EditServiceSheetState extends State<_EditServiceSheet> {
         text: service.customUrl,
       );
       _controllers['systemPrompt'] = TextEditingController(
+        text: service.systemPrompt,
+      );
+    } else if (service is OpenAIResponsesOptions) {
+      _controllers['apiKey'] = TextEditingController(text: service.apiKey);
+      _controllers['openaiModel'] = TextEditingController(text: service.model);
+      _controllers['openaiCustomUrl'] = TextEditingController(
+        text: service.customUrl,
+      );
+      _controllers['openaiSystemPrompt'] = TextEditingController(
         text: service.systemPrompt,
       );
     }
@@ -1685,6 +1772,38 @@ class _EditServiceSheetState extends State<_EditServiceSheet> {
           maxLines: 5,
         ),
       ];
+    } else if (service is OpenAIResponsesOptions) {
+      return [
+        buildTextField(
+          key: 'apiKey',
+          label: l10n.searchServicesDialogApiKey,
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return l10n.searchServicesEditDialogApiKeyRequired;
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        buildTextField(
+          key: 'openaiModel',
+          label: l10n.searchServicesDialogModel,
+          hint: OpenAIResponsesOptions.defaultModel,
+        ),
+        const SizedBox(height: 12),
+        buildTextField(
+          key: 'openaiCustomUrl',
+          label: l10n.searchServicesFieldCustomUrlOptional,
+          hint: OpenAIResponsesOptions.defaultUrl,
+        ),
+        const SizedBox(height: 12),
+        buildTextField(
+          key: 'openaiSystemPrompt',
+          label: l10n.searchServicesDialogSystemPrompt,
+          minLines: 3,
+          maxLines: 5,
+        ),
+      ];
     } else if (service is SearXNGOptions) {
       return [
         buildTextField(
@@ -1822,6 +1941,14 @@ class _EditServiceSheetState extends State<_EditServiceSheet> {
         customUrl: _controllers['customUrl']!.text.trim(),
         systemPrompt: _controllers['systemPrompt']!.text,
       );
+    } else if (service is OpenAIResponsesOptions) {
+      return OpenAIResponsesOptions(
+        id: service.id,
+        apiKey: _controllers['apiKey']!.text,
+        model: _controllers['openaiModel']!.text.trim(),
+        customUrl: _controllers['openaiCustomUrl']!.text.trim(),
+        systemPrompt: _controllers['openaiSystemPrompt']!.text,
+      );
     }
 
     return service;
@@ -1922,6 +2049,8 @@ class _ServiceIcon extends StatelessWidget {
         return 'serper';
       case 'querit':
         return 'querit';
+      case 'openai_responses':
+        return 'openai';
       default:
         return type;
     }
