@@ -61,7 +61,7 @@ const OpenAIReasoningSupport _gpt56Support = OpenAIReasoningSupport(
   supportedEfforts: <String>['none', 'low', 'medium', 'high', 'xhigh', 'max'],
 );
 const OpenAIReasoningSupport _deepSeekSupport = OpenAIReasoningSupport(
-  supportedEfforts: <String>['low', 'medium', 'high', 'xhigh'],
+  supportedEfforts: <String>['none', 'low', 'medium', 'high', 'xhigh', 'max'],
 );
 
 String resolveApiModelIdOverride(

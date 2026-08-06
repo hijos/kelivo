@@ -38,4 +38,21 @@ void main() {
       expect(openAINormalizeReasoningEffort('max', 'gpt-5'), 'high');
     });
   });
+
+  group('DeepSeek Responses reasoning compatibility', () {
+    for (final modelId in const <String>[
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'deepseek-future-model',
+    ]) {
+      test('$modelId preserves none, xhigh, and max efforts', () {
+        expect(openAISupportsNoneReasoning(modelId), isTrue);
+        expect(openAISupportsXhighReasoning(modelId), isTrue);
+        expect(openAISupportsMaxReasoning(modelId), isTrue);
+        expect(openAINormalizeReasoningEffort('off', modelId), 'none');
+        expect(openAINormalizeReasoningEffort('xhigh', modelId), 'xhigh');
+        expect(openAINormalizeReasoningEffort('max', modelId), 'max');
+      });
+    }
+  });
 }

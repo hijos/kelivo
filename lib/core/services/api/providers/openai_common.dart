@@ -1,25 +1,5 @@
 part of '../chat_api_service.dart';
 
-Uri _openAICompatibleUrl(ProviderConfig config) {
-  final rawBase = config.baseUrl.endsWith('/')
-      ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-      : config.baseUrl;
-  final baseUri = Uri.parse(rawBase);
-  if (config.useResponseApi == true) {
-    final normalizedPath = baseUri.path.replaceAll(RegExp(r'/$'), '');
-    if (BuiltInToolsHelper.isDashScopeProvider(config) &&
-        normalizedPath != '/api/v2/apps/protocols/compatible-mode/v1') {
-      return Uri.parse(
-        '${baseUri.scheme}://${baseUri.authority}'
-        '/api/v2/apps/protocols/compatible-mode/v1/responses',
-      );
-    }
-    return Uri.parse('$rawBase/responses');
-  }
-  final path = config.chatPath ?? '/chat/completions';
-  return Uri.parse('$rawBase$path');
-}
-
 Future<String> _saveResponsesImageGenerationMarkdown(
   String imageBase64, {
   String? outputFormat,
@@ -33,6 +13,88 @@ Future<String> _saveResponsesImageGenerationMarkdown(
   final savedPath = await AppDirectories.saveBase64Image(mime, imageBase64);
   if (savedPath == null || savedPath.isEmpty) return '';
   return '\n![image]($savedPath)\n';
+}
+
+bool _supportsResponsesBuiltInSearch(
+  ProviderConfig config,
+  String upstreamModelId,
+) {
+  if (BuiltInToolsHelper.isOpenRouterProvider(config)) return false;
+  if (BuiltInToolsHelper.isDeepSeekProvider(config) ||
+      BuiltInToolsHelper.isDeepSeekModel(upstreamModelId)) {
+    return true;
+  }
+  if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(
+    upstreamModelId,
+  )) {
+    return true;
+  }
+  if (BuiltInToolsHelper.isDashScopeProvider(config)) {
+    return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
+      upstreamModelId,
+    );
+  }
+  return false;
+}
+
+Map<String, dynamic>? _responsesBuiltInSearchTool({
+  required ProviderConfig config,
+  required String modelId,
+  required String upstreamModelId,
+}) {
+  if (config.useResponseApi != true ||
+      !_supportsResponsesBuiltInSearch(config, upstreamModelId) ||
+      !_builtInTools(config, modelId).contains(BuiltInToolNames.search)) {
+    return null;
+  }
+
+  if (BuiltInToolsHelper.isDeepSeekProvider(config) ||
+      BuiltInToolsHelper.isDeepSeekModel(upstreamModelId) ||
+      BuiltInToolsHelper.isDashScopeProvider(config)) {
+    return <String, dynamic>{'type': 'web_search'};
+  }
+
+  Map<String, dynamic> webSearch = const <String, dynamic>{};
+  try {
+    final override = config.modelOverrides[modelId];
+    if (override is Map && override['webSearch'] is Map) {
+      webSearch = (override['webSearch'] as Map).cast<String, dynamic>();
+    }
+  } catch (_) {}
+  final usePreview =
+      webSearch['preview'] == true ||
+      (webSearch['tool'] ?? '').toString() == 'preview';
+  final entry = <String, dynamic>{
+    'type': usePreview ? 'web_search_preview' : 'web_search',
+  };
+  if (webSearch['allowed_domains'] is List &&
+      (webSearch['allowed_domains'] as List).isNotEmpty) {
+    entry['filters'] = {
+      'allowed_domains': List<String>.from(
+        (webSearch['allowed_domains'] as List).map((e) => e.toString()),
+      ),
+    };
+  }
+  if (webSearch['user_location'] is Map) {
+    entry['user_location'] = (webSearch['user_location'] as Map)
+        .cast<String, dynamic>();
+  }
+  if (usePreview && webSearch['search_context_size'] is String) {
+    entry['search_context_size'] = webSearch['search_context_size'];
+  }
+  return entry;
+}
+
+String _responsesFailureMessage(dynamic response) {
+  final error = response is Map ? response['error'] : null;
+  if (error is Map) {
+    final code = (error['code'] ?? '').toString().trim();
+    final message = (error['message'] ?? '').toString().trim();
+    if (code.isNotEmpty && message.isNotEmpty) return '$code: $message';
+    if (message.isNotEmpty) return message;
+    if (code.isNotEmpty) return code;
+  }
+  return 'Unknown Responses API error';
 }
 
 void _applyCompatibleBuiltInSearch(
@@ -861,6 +923,7 @@ void _applyVendorReasoningKnobs(
   } else if (info.isDeepSeek) {
     if (isReasoning) {
       body['thinking'] = {'type': off ? 'disabled' : 'enabled'};
+      if (off) body.remove('reasoning_effort');
     } else {
       body.remove('thinking');
       body.remove('reasoning_effort');
@@ -885,7 +948,7 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
   bool stream = true,
 }) async* {
   final upstreamModelId = _apiModelId(config, modelId);
-  final url = _openAICompatibleUrl(config);
+  final url = resolveOpenAICompatibleUrl(config);
 
   final effectiveInfo = _effectiveModelInfo(config, modelId);
   final isReasoning = effectiveInfo.abilities.contains(ModelAbility.reasoning);
@@ -948,64 +1011,13 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
       addResponsesBuiltInTool({'type': 'image_generation'});
     }
 
-    // Built-in web search for Responses API when enabled on supported models
-    bool isResponsesWebSearchSupported(String id) {
-      if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(id)) {
-        return true;
-      }
-      if (BuiltInToolsHelper.isDashScopeProvider(config)) {
-        return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
-          id,
-        );
-      }
-      return false;
-    }
-
-    if (isResponsesWebSearchSupported(upstreamModelId)) {
-      if (builtIns.contains(BuiltInToolNames.search)) {
-        if (BuiltInToolsHelper.isDashScopeProvider(config)) {
-          addResponsesBuiltInTool({'type': 'web_search'});
-        } else {
-          // Optional per-model configuration under modelOverrides[modelId]['webSearch']
-          Map<String, dynamic> ws = const <String, dynamic>{};
-          try {
-            final ov = config.modelOverrides[modelId];
-            if (ov is Map && ov['webSearch'] is Map) {
-              ws = (ov['webSearch'] as Map).cast<String, dynamic>();
-            }
-          } catch (_) {}
-          final usePreview =
-              (ws['preview'] == true) ||
-              ((ws['tool'] ?? '').toString() == 'preview');
-          final entry = <String, dynamic>{
-            'type': usePreview ? 'web_search_preview' : 'web_search',
-          };
-          // Domain filters
-          if (ws['allowed_domains'] is List &&
-              (ws['allowed_domains'] as List).isNotEmpty) {
-            entry['filters'] = {
-              'allowed_domains': List<String>.from(
-                (ws['allowed_domains'] as List).map((e) => e.toString()),
-              ),
-            };
-          }
-          // User location
-          if (ws['user_location'] is Map) {
-            entry['user_location'] = (ws['user_location'] as Map)
-                .cast<String, dynamic>();
-          }
-          // Search context size (preview tool only)
-          if (usePreview && ws['search_context_size'] is String) {
-            entry['search_context_size'] = ws['search_context_size'];
-          }
-          addResponsesBuiltInTool(entry);
-          // Optionally request sources in output
-          if (ws['include_sources'] == true) {
-            // Merge/append include array
-            // We'll add this after input loop when building body
-          }
-        }
-      }
+    final builtInSearchTool = _responsesBuiltInSearchTool(
+      config: config,
+      modelId: modelId,
+      upstreamModelId: upstreamModelId,
+    );
+    if (builtInSearchTool != null) {
+      addResponsesBuiltInTool(builtInSearchTool);
     }
     // Collect the last assistant image to attach to the new user message
     String? lastAssistantImageUrl;
@@ -1221,7 +1233,8 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
       thinkingBudget: thinkingBudget,
     );
     // Append include parameter if we opted into sources via overrides
-    if (!BuiltInToolsHelper.isDashScopeProvider(config)) {
+    if (!BuiltInToolsHelper.isDashScopeProvider(config) &&
+        !BuiltInToolsHelper.isDeepSeekProvider(config)) {
       try {
         final ov = config.modelOverrides[modelId];
         final ws = (ov is Map ? ov['webSearch'] : null);
@@ -2234,7 +2247,8 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
               content = delta;
               approxCompletionChars += content.length;
             }
-          } else if (type == 'response.reasoning_summary_text.delta') {
+          } else if (type == 'response.reasoning_summary_text.delta' ||
+              type == 'response.reasoning_text.delta') {
             final delta = json['delta'];
             if (delta is String) reasoning = delta;
           } else if (type == 'response.output_item.added') {
@@ -2328,7 +2342,12 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
                 entry['args'] = (entry['args'] ?? '') + argsDelta;
               }
             }
-          } else if (type == 'response.completed') {
+          } else if (type == 'response.failed') {
+            throw HttpException(
+              'Responses API failed: ${_responsesFailureMessage(json['response'])}',
+            );
+          } else if (type == 'response.completed' ||
+              type == 'response.incomplete') {
             final u = json['response']?['usage'];
             if (u != null) {
               final inTok = (u['input_tokens'] ?? 0) as int;
@@ -2447,7 +2466,8 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
             } catch (_) {}
             // Responses tool calling follow-up handling
             final bool hasRespCalls =
-                respToolCallsByIndex.isNotEmpty || toolAccResp.isNotEmpty;
+                type == 'response.completed' &&
+                (respToolCallsByIndex.isNotEmpty || toolAccResp.isNotEmpty);
             if (onToolCall != null && hasRespCalls) {
               // Prefer the indexed calls (with call_id); fallback to toolAccResp
               final callInfos = <ToolCallInfo>[];
@@ -2641,6 +2661,7 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
                     <int, Map<String, String>>{};
                 List<Map<String, dynamic>> outItems2 =
                     const <Map<String, dynamic>>[];
+                bool responseIncomplete2 = false;
                 await for (final ch in _ensureTrailingNewline(s2)) {
                   buf2 += ch;
                   final lines2 = buf2.split('\n');
@@ -2659,6 +2680,21 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
                           approxCompletionChars += delta.length;
                           yield ChatStreamChunk(
                             content: delta,
+                            isDone: false,
+                            totalTokens: 0,
+                            usage: usage,
+                          );
+                        }
+                      } else if (o is Map &&
+                          ((o['type'] ?? '') ==
+                                  'response.reasoning_summary_text.delta' ||
+                              (o['type'] ?? '') ==
+                                  'response.reasoning_text.delta')) {
+                        final delta = (o['delta'] ?? '').toString();
+                        if (delta.isNotEmpty) {
+                          yield ChatStreamChunk(
+                            content: '',
+                            reasoning: delta,
                             isDone: false,
                             totalTokens: 0,
                             usage: usage,
@@ -2706,7 +2742,15 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
                           if (args.isNotEmpty) entry['args'] = args;
                         }
                       } else if (o is Map &&
-                          (o['type'] ?? '') == 'response.completed') {
+                          (o['type'] ?? '') == 'response.failed') {
+                        throw HttpException(
+                          'Responses API failed: ${_responsesFailureMessage(o['response'])}',
+                        );
+                      } else if (o is Map &&
+                          ((o['type'] ?? '') == 'response.completed' ||
+                              (o['type'] ?? '') == 'response.incomplete')) {
+                        responseIncomplete2 =
+                            (o['type'] ?? '') == 'response.incomplete';
                         // usage
                         final u2 = o['response']?['usage'];
                         if (u2 != null) {
@@ -2729,8 +2773,14 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
                           ];
                         }
                       }
+                    } on HttpException {
+                      rethrow;
                     } catch (_) {}
                   }
+                }
+
+                if (responseIncomplete2) {
+                  respCalls2.clear();
                 }
 
                 if (respCalls2.isEmpty) {
@@ -4122,6 +4172,8 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
             // return;
           }
         }
+      } on HttpException {
+        rethrow;
       } catch (e) {
         // Skip malformed JSON
       }

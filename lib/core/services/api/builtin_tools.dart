@@ -221,6 +221,10 @@ abstract class BuiltInToolsHelper {
         providerName.contains('deepseek');
   }
 
+  static bool isDeepSeekModel(String? modelId) {
+    return _normalizedModelId(modelId).contains('deepseek');
+  }
+
   static bool isDashScopeChatBuiltInSearchSupportedModel(String? modelId) {
     final m = _normalizedModelId(modelId);
     return _matchesExactOrSnapshot(
@@ -319,6 +323,9 @@ abstract class BuiltInToolsHelper {
         }
         if (isGrokModel(upstreamModelId)) return true;
         if (cfg.useResponseApi == true) {
+          if (isDeepSeekProvider(cfg) || isDeepSeekModel(upstreamModelId)) {
+            return true;
+          }
           if (isOpenAIResponsesBuiltInSearchSupportedModel(upstreamModelId)) {
             return true;
           }

@@ -7,6 +7,7 @@ import 'settings_provider.dart';
 import '../services/network/dio_http_client.dart';
 import '../services/api_key_manager.dart';
 import '../services/api/provider_request_headers.dart';
+import '../services/api/openai_compatible_url.dart';
 import '../services/model_override_payload_parser.dart';
 import 'package:Kelivo/secrets/fallback.dart';
 import '../services/api/google_service_account_auth.dart';
@@ -394,13 +395,7 @@ class ProviderManager {
     final client = _Http.clientFor(cfg);
     try {
       if (kind == ProviderKind.openai) {
-        final base = cfg.baseUrl.endsWith('/')
-            ? cfg.baseUrl.substring(0, cfg.baseUrl.length - 1)
-            : cfg.baseUrl;
-        final path = (cfg.useResponseApi == true)
-            ? '/responses'
-            : (cfg.chatPath ?? '/chat/completions');
-        final url = Uri.parse('$base$path');
+        final url = resolveOpenAICompatibleUrl(cfg);
         final ov = _modelOverride(cfg, modelId);
         String upstreamId = modelId;
         try {
