@@ -726,6 +726,9 @@ class HomePageController extends ChangeNotifier {
   bool get isCurrentConversationLoading =>
       _viewModel.isCurrentConversationLoading;
 
+  bool get canStopCurrentGeneration =>
+      _chatController.isSelectedAnswerStreaming;
+
   QueuedChatInput? get currentQueuedInput => _viewModel.currentQueuedInput;
   bool get currentQueuedInputPaused => _viewModel.currentQueuedInputPaused;
   bool get isCurrentConversationCompressing =>
@@ -986,7 +989,18 @@ class HomePageController extends ChangeNotifier {
     if (error.contains('context_budget_exceeded')) {
       return l10n.contextBudgetExceeded;
     }
-    return '${l10n.generationInterrupted}: $error';
+    const incompatiblePrefix = 'multi_model_attachment_unsupported:';
+    if (error.startsWith(incompatiblePrefix)) {
+      return l10n.multiModelAttachmentUnsupported(
+        error.substring(incompatiblePrefix.length),
+      );
+    }
+    switch (error) {
+      case 'selected_model_answer_unavailable':
+        return l10n.multiModelSelectedAnswerUnavailable;
+      default:
+        return '${l10n.generationInterrupted}: $error';
+    }
   }
 
   void _initializeScrollController() {

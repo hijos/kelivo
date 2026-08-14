@@ -2314,6 +2314,11 @@ void main() {
     final controller = await pumpHarness(tester);
     await tester.runAsync(() async {
       final convo = await openConversation(controller);
+      final stoppingAnswer = await controller.chatController.addMessage(
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      );
       controller.chatController.setConversationLoading(convo.id, true);
       final releaseCancel = Completer<void>();
       var cancelCalls = 0;
@@ -2325,7 +2330,7 @@ void main() {
         },
       );
       controller.chatController.setStreamSubscription(
-        convo.id,
+        stoppingAnswer.id,
         source.stream.listen((_) {}),
       );
 

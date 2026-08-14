@@ -74,6 +74,7 @@ class _PackedGenerationService extends MessageGenerationService {
     required String modelId,
     String? requiredAttachmentMessageId,
     bool syncWorkspaceAttachments = true,
+    bool restrictToSearchTools = false,
     bool persistWorldBookActivation = true,
     void Function(int before, int after)? onWorldBookActivationPersisted,
   }) async => packed;
