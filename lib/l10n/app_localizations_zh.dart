@@ -2395,6 +2395,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatMessageWidgetCopiedToClipboard => '已复制到剪贴板';
 
   @override
+  String get chatMessageWidgetQuote => '引用';
+
+  @override
   String get chatMessageWidgetResendTooltip => '重新发送';
 
   @override
@@ -14143,6 +14146,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get chatMessageWidgetCopiedToClipboard => '已复制到剪贴板';
 
   @override
+  String get chatMessageWidgetQuote => '引用';
+
+  @override
   String get chatMessageWidgetResendTooltip => '重新发送';
 
   @override
@@ -25815,6 +25821,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get chatMessageWidgetCopiedToClipboard => '已複製到剪貼簿';
+
+  @override
+  String get chatMessageWidgetQuote => '引用';
 
   @override
   String get chatMessageWidgetResendTooltip => '重新傳送';

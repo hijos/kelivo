@@ -135,6 +135,7 @@ class MessageListView extends StatefulWidget {
     this.onShareMessage,
     this.onSelectMessages,
     this.onSpeakMessage,
+    this.onQuoteSelection,
     this.suggestions = const <String>[],
     this.onSuggestionTap,
     this.onRecoveredAskUserAnswer,
@@ -228,6 +229,7 @@ class MessageListView extends StatefulWidget {
   final OnShareMessage? onShareMessage;
   final OnSelectMessages? onSelectMessages;
   final OnSpeakMessage? onSpeakMessage;
+  final ValueChanged<String>? onQuoteSelection;
   final List<String> suggestions;
 
   /// A compact action that scrolls after the last message, outside its content.
@@ -1760,7 +1762,10 @@ class _MessageListViewState extends State<MessageListView> {
 
             final userScrollAwareList = Listener(
               onPointerDown: (event) {
-                if (_isDesktopPlatform) _keyboardFocusNode.requestFocus();
+                if (_isDesktopPlatform &&
+                    (event.buttons & kSecondaryMouseButton) == 0) {
+                  _keyboardFocusNode.requestFocus();
+                }
                 if (event.buttons != 0 &&
                     event.buttons != kSecondaryMouseButton) {
                   _pointerDragInProgress = true;
@@ -2417,6 +2422,9 @@ class _MessageListViewState extends State<MessageListView> {
           : null,
       onTranslate: message.role == 'assistant'
           ? () => widget.onTranslateMessage?.call(message)
+          : null,
+      onQuoteSelection: (message.role == 'assistant' || message.role == 'user')
+          ? widget.onQuoteSelection
           : null,
       onSpeak: message.role == 'assistant'
           ? () => widget.onSpeakMessage?.call(message)
