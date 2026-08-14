@@ -19,6 +19,7 @@ import 'providers/perplexity_search_service.dart';
 import 'providers/duckduckgo_search_service.dart';
 import 'providers/serper_search_service.dart';
 import 'providers/grok_search_service.dart';
+import 'providers/openai_responses_search_service.dart';
 import 'providers/querit_search_service.dart';
 import 'providers/stepfun_search_service.dart';
 import 'providers/firecrawl_search_service.dart';
@@ -88,6 +89,8 @@ abstract class SearchService<T extends SearchServiceOptions> {
         return SerperSearchService() as SearchService;
       case GrokOptions _:
         return GrokSearchService() as SearchService;
+      case OpenAIResponsesOptions _:
+        return OpenAIResponsesSearchService() as SearchService;
       case QueritOptions _:
         return QueritSearchService() as SearchService;
       case StepFunOptions _:
@@ -159,10 +162,17 @@ class SearchResultItem {
 
 // Common search options
 class SearchCommonOptions {
+  static const int defaultTimeoutMs = 60000;
+  static const int minTimeoutMs = 1000;
+  static const int maxTimeoutMs = 120000;
+
   final int resultSize;
   final int timeout;
 
-  const SearchCommonOptions({this.resultSize = 10, this.timeout = 5000});
+  const SearchCommonOptions({
+    this.resultSize = 10,
+    this.timeout = defaultTimeoutMs,
+  });
 
   Map<String, dynamic> toJson() => {
     'resultSize': resultSize,
@@ -172,8 +182,17 @@ class SearchCommonOptions {
   factory SearchCommonOptions.fromJson(Map<String, dynamic> json) =>
       SearchCommonOptions(
         resultSize: json['resultSize'] ?? 10,
-        timeout: json['timeout'] ?? 5000,
+        timeout: _parseTimeout(json['timeout']),
       );
+
+  static int _parseTimeout(Object? value) {
+    final parsed = value is num
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '');
+    return (parsed ?? defaultTimeoutMs)
+        .clamp(minTimeoutMs, maxTimeoutMs)
+        .toInt();
+  }
 }
 
 // Base class for service-specific options
@@ -237,6 +256,8 @@ abstract class SearchServiceOptions {
         return SerperOptions.fromJson(json);
       case 'grok':
         return GrokOptions.fromJson(json);
+      case 'openai_responses':
+        return OpenAIResponsesOptions.fromJson(json);
       case 'querit':
         return QueritOptions.fromJson(json);
       case 'stepfun':
@@ -706,6 +727,63 @@ class GrokOptions extends SearchServiceOptions {
     systemPrompt: json['systemPrompt'] ?? defaultSystemPrompt,
     extraApiKeys: SearchServiceOptions.parseExtraApiKeys(json),
   );
+}
+
+class OpenAIResponsesOptions extends SearchServiceOptions {
+  static const String defaultUrl = 'https://api.openai.com/v1/responses';
+  static const String defaultModel = 'gpt-5.6';
+  static const String defaultSystemPrompt =
+      "You are a helpful search assistant. Search the web to find accurate and up-to-date information for the user's query. Provide a comprehensive answer with citations.";
+
+  final String apiKey;
+  final String model;
+  final String customUrl;
+  final String systemPrompt;
+
+  OpenAIResponsesOptions({
+    required super.id,
+    required this.apiKey,
+    this.model = defaultModel,
+    this.customUrl = defaultUrl,
+    this.systemPrompt = defaultSystemPrompt,
+    super.extraApiKeys,
+  });
+
+  String get resolvedUrl {
+    final trimmed = customUrl.trim();
+    return trimmed.isEmpty ? defaultUrl : trimmed;
+  }
+
+  String get resolvedModel {
+    final trimmed = model.trim();
+    return trimmed.isEmpty ? defaultModel : trimmed;
+  }
+
+  String get resolvedSystemPrompt {
+    final trimmed = systemPrompt.trim();
+    return trimmed.isEmpty ? defaultSystemPrompt : trimmed;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'openai_responses',
+    'id': id,
+    'apiKey': apiKey,
+    'model': model.trim(),
+    'customUrl': customUrl.trim(),
+    'systemPrompt': systemPrompt,
+    if (extraApiKeys.isNotEmpty) 'apiKeys': extraApiKeys,
+  };
+
+  factory OpenAIResponsesOptions.fromJson(Map<String, dynamic> json) =>
+      OpenAIResponsesOptions(
+        id: json['id'],
+        apiKey: json['apiKey'] ?? '',
+        model: json['model'] ?? defaultModel,
+        customUrl: json['customUrl'] ?? defaultUrl,
+        systemPrompt: json['systemPrompt'] ?? defaultSystemPrompt,
+        extraApiKeys: SearchServiceOptions.parseExtraApiKeys(json),
+      );
 }
 
 class QueritOptions extends SearchServiceOptions {

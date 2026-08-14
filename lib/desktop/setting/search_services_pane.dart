@@ -9,6 +9,7 @@ import '../../utils/brand_assets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:uuid/uuid.dart';
 import '../../shared/widgets/ios_switch.dart';
+import '../../shared/widgets/bounded_integer_field.dart';
 import '../../theme/app_font_weights.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
 
@@ -204,7 +205,18 @@ class _DesktopSearchServicesPaneState extends State<DesktopSearchServicesPane> {
                       icon: lucide.Lucide.History,
                       label: l10n.searchServicesPageTimeoutSeconds,
                       value: common.timeout ~/ 1000,
-                      onMinus: common.timeout > 1000
+                      minValue: SearchCommonOptions.minTimeoutMs ~/ 1000,
+                      maxValue: SearchCommonOptions.maxTimeoutMs ~/ 1000,
+                      inputKey: const ValueKey('search_timeout_input_desktop'),
+                      onValueSubmitted: (seconds) => context
+                          .read<SettingsProvider>()
+                          .setSearchCommonOptions(
+                            SearchCommonOptions(
+                              resultSize: common.resultSize,
+                              timeout: seconds * 1000,
+                            ),
+                          ),
+                      onMinus: common.timeout > SearchCommonOptions.minTimeoutMs
                           ? () => context
                                 .read<SettingsProvider>()
                                 .setSearchCommonOptions(
@@ -214,7 +226,7 @@ class _DesktopSearchServicesPaneState extends State<DesktopSearchServicesPane> {
                                   ),
                                 )
                           : null,
-                      onPlus: common.timeout < 30000
+                      onPlus: common.timeout < SearchCommonOptions.maxTimeoutMs
                           ? () => context
                                 .read<SettingsProvider>()
                                 .setSearchCommonOptions(
@@ -446,12 +458,20 @@ class _StepperRow extends StatefulWidget {
     required this.value,
     this.onMinus,
     this.onPlus,
+    this.onValueSubmitted,
+    this.minValue = 1,
+    this.maxValue = 120,
+    this.inputKey,
   });
   final IconData icon;
   final String label;
   final int value;
   final VoidCallback? onMinus;
   final VoidCallback? onPlus;
+  final ValueChanged<int>? onValueSubmitted;
+  final int minValue;
+  final int maxValue;
+  final Key? inputKey;
   @override
   State<_StepperRow> createState() => _StepperRowState();
 }
@@ -488,18 +508,27 @@ class _StepperRowState extends State<_StepperRow> {
             onTap: widget.onMinus ?? () {},
           ),
           const SizedBox(width: 8),
-          Container(
-            width: 42,
-            alignment: Alignment.center,
-            child: Text(
-              '${widget.value}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: AppFontWeights.regular,
-                color: cs.onSurface.withValues(alpha: 0.9),
+          if (widget.onValueSubmitted == null)
+            Container(
+              width: 42,
+              alignment: Alignment.center,
+              child: Text(
+                '${widget.value}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: AppFontWeights.regular,
+                  color: cs.onSurface.withValues(alpha: 0.9),
+                ),
               ),
+            )
+          else
+            BoundedIntegerField(
+              key: widget.inputKey,
+              value: widget.value,
+              minValue: widget.minValue,
+              maxValue: widget.maxValue,
+              onChanged: widget.onValueSubmitted!,
             ),
-          ),
           const SizedBox(width: 8),
           _StepperButton(
             icon: lucide.Lucide.Plus,
@@ -603,6 +632,7 @@ class _BrandBadge extends StatelessWidget {
     if (s is SerperOptions) return 'serper';
     if (s is QueritOptions) return 'querit';
     if (s is GrokOptions) return 'grok';
+    if (s is OpenAIResponsesOptions) return 'openai';
     if (s is StepFunOptions) return 'stepfun';
     if (s is FirecrawlOptions) return 'firecrawl';
     if (s is TinyFishOptions) return 'tinyfish';
@@ -794,6 +824,15 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
     'customUrl': TextEditingController(text: GrokOptions.defaultUrl),
     'systemPrompt': TextEditingController(
       text: GrokOptions.defaultSystemPrompt,
+    ),
+    'openaiModel': TextEditingController(
+      text: OpenAIResponsesOptions.defaultModel,
+    ),
+    'openaiCustomUrl': TextEditingController(
+      text: OpenAIResponsesOptions.defaultUrl,
+    ),
+    'openaiSystemPrompt': TextEditingController(
+      text: OpenAIResponsesOptions.defaultSystemPrompt,
     ),
     'category': TextEditingController(),
     'country': TextEditingController(),
@@ -1031,6 +1070,36 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
             maxLines: 5,
           ),
         ];
+      case 'openai_responses':
+        return [
+          TextField(
+            controller: _controllers['apiKey'],
+            decoration: deco(l10n.searchServicesDialogApiKey),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiModel'],
+            decoration: _deskInputDecoration(context).copyWith(
+              labelText: l10n.searchServicesDialogModel,
+              hintText: OpenAIResponsesOptions.defaultModel,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiCustomUrl'],
+            decoration: _deskInputDecoration(context).copyWith(
+              labelText: l10n.searchServicesFieldCustomUrlOptional,
+              hintText: OpenAIResponsesOptions.defaultUrl,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controllers['openaiSystemPrompt'],
+            decoration: deco(l10n.searchServicesDialogSystemPrompt),
+            minLines: 3,
+            maxLines: 5,
+          ),
+        ];
       case 'searxng':
         return [
           TextField(
@@ -1222,6 +1291,14 @@ class _AddServiceDialogState extends State<_AddServiceDialog> {
           customUrl: _controllers['customUrl']!.text.trim(),
           systemPrompt: _controllers['systemPrompt']!.text,
         );
+      case 'openai_responses':
+        return OpenAIResponsesOptions(
+          id: id,
+          apiKey: _controllers['apiKey']!.text,
+          model: _controllers['openaiModel']!.text.trim(),
+          customUrl: _controllers['openaiCustomUrl']!.text.trim(),
+          systemPrompt: _controllers['openaiSystemPrompt']!.text,
+        );
       case 'stepfun':
         return StepFunOptions(
           id: id,
@@ -1336,6 +1413,13 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
       _controllers['reasoningEffort'] = TextEditingController(
         text: s.reasoningEffort,
       );
+      _controllers['customUrl'] = TextEditingController(text: s.customUrl);
+      _controllers['systemPrompt'] = TextEditingController(
+        text: s.systemPrompt,
+      );
+    } else if (s is OpenAIResponsesOptions) {
+      _controllers['apiKey'] = TextEditingController(text: s.apiKey);
+      _controllers['model'] = TextEditingController(text: s.model);
       _controllers['customUrl'] = TextEditingController(text: s.customUrl);
       _controllers['systemPrompt'] = TextEditingController(
         text: s.systemPrompt,
@@ -1518,6 +1602,38 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
           decoration: _deskInputDecoration(context).copyWith(
             labelText: l10n.searchServicesFieldCustomUrlOptional,
             hintText: GrokOptions.defaultUrl,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['systemPrompt'],
+          decoration: deco(l10n.searchServicesDialogSystemPrompt),
+          minLines: 3,
+          maxLines: 5,
+        ),
+      ];
+    } else if (s is OpenAIResponsesOptions) {
+      return [
+        TextField(
+          controller: _controllers['apiKey'],
+          decoration: deco(l10n.searchServicesDialogApiKey),
+        ),
+        const SizedBox(height: 12),
+        _multiKeyTile(),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['model'],
+          decoration: _deskInputDecoration(context).copyWith(
+            labelText: l10n.searchServicesDialogModel,
+            hintText: OpenAIResponsesOptions.defaultModel,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _controllers['customUrl'],
+          decoration: _deskInputDecoration(context).copyWith(
+            labelText: l10n.searchServicesFieldCustomUrlOptional,
+            hintText: OpenAIResponsesOptions.defaultUrl,
           ),
         ),
         const SizedBox(height: 12),
@@ -1916,6 +2032,16 @@ class _EditServiceDialogState extends State<_EditServiceDialog> {
         extraApiKeys: _extraApiKeys,
       );
     }
+    if (s is OpenAIResponsesOptions) {
+      return OpenAIResponsesOptions(
+        id: s.id,
+        apiKey: _controllers['apiKey']!.text,
+        model: _controllers['model']!.text.trim(),
+        customUrl: _controllers['customUrl']!.text.trim(),
+        systemPrompt: _controllers['systemPrompt']!.text,
+        extraApiKeys: _extraApiKeys,
+      );
+    }
     if (s is StepFunOptions) {
       return StepFunOptions(
         id: s.id,
@@ -2225,6 +2351,7 @@ class _ServiceTypeChipsState extends State<_ServiceTypeChips> {
     (type: 'serper', brand: 'serper'),
     (type: 'querit', brand: 'querit'),
     (type: 'grok', brand: 'grok'),
+    (type: 'openai_responses', brand: 'openai'),
     (type: 'stepfun', brand: 'stepfun'),
     (type: 'firecrawl', brand: 'firecrawl'),
     (type: 'tinyfish', brand: 'tinyfish'),
@@ -2314,6 +2441,8 @@ String _serviceTypeName(BuildContext context, String type) {
       return l10n.searchServiceNameQuerit;
     case 'grok':
       return l10n.searchServiceNameGrok;
+    case 'openai_responses':
+      return l10n.searchServiceNameOpenAIResponses;
     case 'stepfun':
       return l10n.searchServiceNameStepFun;
     case 'firecrawl':

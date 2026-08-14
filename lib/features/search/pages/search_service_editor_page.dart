@@ -510,6 +510,34 @@ class _SearchServiceEditorPageState extends State<SearchServiceEditorPage> {
         ),
       ];
     }
+    if (service is OpenAIResponsesOptions) {
+      return [
+        field(
+          key: 'apiKey',
+          label: l10n.searchServicesDialogApiKey,
+          obscure: true,
+          validator: requiredApiKey,
+        ),
+        _buildMultiKeyEntry(context),
+        field(
+          key: 'model',
+          label: l10n.searchServicesDialogModel,
+          hint: OpenAIResponsesOptions.defaultModel,
+        ),
+        field(
+          key: 'customUrl',
+          label: l10n.searchServicesFieldCustomUrlOptional,
+          hint: OpenAIResponsesOptions.defaultUrl,
+          keyboardType: TextInputType.url,
+        ),
+        field(
+          key: 'systemPrompt',
+          label: l10n.searchServicesDialogSystemPrompt,
+          minLines: 3,
+          maxLines: 6,
+        ),
+      ];
+    }
     if (service is StepFunOptions) {
       return [
         field(
@@ -1088,6 +1116,11 @@ class _SearchServiceEditorPageState extends State<SearchServiceEditorPage> {
       _putController('reasoningEffort', service.reasoningEffort);
       _putController('customUrl', service.customUrl);
       _putController('systemPrompt', service.systemPrompt);
+    } else if (service is OpenAIResponsesOptions) {
+      _putController('apiKey', service.apiKey);
+      _putController('model', service.model);
+      _putController('customUrl', service.customUrl);
+      _putController('systemPrompt', service.systemPrompt);
     } else if (service is StepFunOptions) {
       _putController('apiKey', service.apiKey);
       _putController('url', service.url);
@@ -1247,6 +1280,15 @@ class _SearchServiceEditorPageState extends State<SearchServiceEditorPage> {
           extraApiKeys: _extraApiKeys,
           model: _text('model'),
           reasoningEffort: _text('reasoningEffort'),
+          customUrl: _text('customUrl'),
+          systemPrompt: _controller('systemPrompt').text,
+        );
+      case 'openai_responses':
+        return OpenAIResponsesOptions(
+          id: _serviceId,
+          apiKey: _text('apiKey'),
+          extraApiKeys: _extraApiKeys,
+          model: _text('model'),
           customUrl: _text('customUrl'),
           systemPrompt: _controller('systemPrompt').text,
         );
@@ -2118,6 +2160,7 @@ String _typeForService(SearchServiceOptions service) {
   if (service is SerperOptions) return 'serper';
   if (service is QueritOptions) return 'querit';
   if (service is GrokOptions) return 'grok';
+  if (service is OpenAIResponsesOptions) return 'openai_responses';
   if (service is StepFunOptions) return 'stepfun';
   if (service is FirecrawlOptions) return 'firecrawl';
   if (service is TinyFishOptions) return 'tinyfish';
@@ -2126,6 +2169,7 @@ String _typeForService(SearchServiceOptions service) {
 
 String _brandForService(SearchServiceOptions service) {
   final type = _typeForService(service);
+  if (type == 'openai_responses') return 'openai';
   return type == 'bing_local' ? 'bing' : type;
 }
 
@@ -2165,6 +2209,8 @@ SearchServiceOptions _defaultService(String type, String id) {
       return QueritOptions(id: id, apiKey: '');
     case 'grok':
       return GrokOptions(id: id, apiKey: '');
+    case 'openai_responses':
+      return OpenAIResponsesOptions(id: id, apiKey: '');
     case 'stepfun':
       return StepFunOptions(id: id, apiKey: '');
     case 'firecrawl':
@@ -2213,6 +2259,8 @@ String _serviceTypeName(BuildContext context, String type) {
       return l10n.searchServiceNameQuerit;
     case 'grok':
       return l10n.searchServiceNameGrok;
+    case 'openai_responses':
+      return l10n.searchServiceNameOpenAIResponses;
     case 'stepfun':
       return l10n.searchServiceNameStepFun;
     case 'firecrawl':
@@ -2242,6 +2290,7 @@ const _providerTypes = <({String type, String brand})>[
   (type: 'serper', brand: 'serper'),
   (type: 'querit', brand: 'querit'),
   (type: 'grok', brand: 'grok'),
+  (type: 'openai_responses', brand: 'openai'),
   (type: 'stepfun', brand: 'stepfun'),
   (type: 'firecrawl', brand: 'firecrawl'),
   (type: 'tinyfish', brand: 'tinyfish'),

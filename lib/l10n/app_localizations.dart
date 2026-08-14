@@ -9769,6 +9769,18 @@ abstract class AppLocalizations {
   /// **'Grok search via xAI Responses API. Uses web and X search tools and returns cited sources.'**
   String get searchProviderGrokDescription;
 
+  /// No description provided for @searchServiceNameOpenAIResponses.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI Responses'**
+  String get searchServiceNameOpenAIResponses;
+
+  /// No description provided for @searchProviderOpenAIResponsesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI web search via the Responses API. Uses the web search tool and returns cited sources.'**
+  String get searchProviderOpenAIResponsesDescription;
+
   /// No description provided for @searchServiceNameStepFun.
   ///
   /// In en, this message translates to:
