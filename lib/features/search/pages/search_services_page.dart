@@ -9,6 +9,7 @@ import '../../../shared/widgets/snackbar.dart';
 import '../../../utils/brand_assets.dart';
 import '../../../core/services/haptics.dart';
 import '../../../shared/widgets/ios_switch.dart';
+import '../../../shared/widgets/bounded_integer_field.dart';
 import '../../../theme/app_font_weights.dart';
 import 'search_service_editor_page.dart';
 import 'package:Kelivo/theme/app_semantic_colors.dart';
@@ -218,6 +219,10 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
       required int value,
       required VoidCallback onMinus,
       required VoidCallback onPlus,
+      ValueChanged<int>? onValueSubmitted,
+      int minValue = 1,
+      int maxValue = 120,
+      Key? inputKey,
       String? unit,
     }) {
       return Row(
@@ -225,13 +230,22 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
         children: [
           _SmallTactileIcon(icon: Lucide.Minus, onTap: onMinus, enabled: true),
           const SizedBox(width: 8),
-          Text(
-            unit == null ? '$value' : '$value$unit',
-            style: TextStyle(
-              fontSize: 14,
-              color: cs.onSurface.withValues(alpha: 0.8),
+          if (onValueSubmitted == null)
+            Text(
+              unit == null ? '$value' : '$value$unit',
+              style: TextStyle(
+                fontSize: 14,
+                color: cs.onSurface.withValues(alpha: 0.8),
+              ),
+            )
+          else
+            BoundedIntegerField(
+              key: inputKey,
+              value: value,
+              minValue: minValue,
+              maxValue: maxValue,
+              onChanged: onValueSubmitted,
             ),
-          ),
           const SizedBox(width: 8),
           _SmallTactileIcon(icon: Lucide.Plus, onTap: onPlus, enabled: true),
         ],
@@ -381,7 +395,20 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
                       ),
                       stepper(
                         value: common.timeout ~/ 1000,
-                        onMinus: common.timeout > 1000
+                        minValue: SearchCommonOptions.minTimeoutMs ~/ 1000,
+                        maxValue: SearchCommonOptions.maxTimeoutMs ~/ 1000,
+                        inputKey: const ValueKey('search_timeout_input_mobile'),
+                        onValueSubmitted: (seconds) =>
+                            context.read<SettingsProvider>().updateSettings(
+                              settings.copyWith(
+                                searchCommonOptions: SearchCommonOptions(
+                                  resultSize: common.resultSize,
+                                  timeout: seconds * 1000,
+                                ),
+                              ),
+                            ),
+                        onMinus:
+                            common.timeout > SearchCommonOptions.minTimeoutMs
                             ? () => context
                                   .read<SettingsProvider>()
                                   .updateSettings(
@@ -393,7 +420,8 @@ class _SearchServicesPageState extends State<SearchServicesPage> {
                                     ),
                                   )
                             : () {},
-                        onPlus: common.timeout < 30000
+                        onPlus:
+                            common.timeout < SearchCommonOptions.maxTimeoutMs
                             ? () => context
                                   .read<SettingsProvider>()
                                   .updateSettings(
@@ -593,6 +621,7 @@ class _BrandBadge extends StatelessWidget {
     if (s is SerperOptions) return 'serper';
     if (s is QueritOptions) return 'querit';
     if (s is GrokOptions) return 'grok';
+    if (s is OpenAIResponsesOptions) return 'openai';
     if (s is StepFunOptions) return 'stepfun';
     if (s is FirecrawlOptions) return 'firecrawl';
     if (s is TinyFishOptions) return 'tinyfish';

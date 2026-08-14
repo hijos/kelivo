@@ -363,6 +363,39 @@ void main() {
     expect((result!.service! as TavilyOptions).apiKey, 'new-key');
   });
 
+  testWidgets('edits OpenAI Responses fields and preserves key rotation', (
+    tester,
+  ) async {
+    SearchServiceEditorResult? result;
+    await _pumpEditor(
+      tester,
+      initialService: OpenAIResponsesOptions(
+        id: 'openai-responses',
+        apiKey: 'old-key',
+        extraApiKeys: const ['backup-key'],
+      ),
+      onResult: (value) => result = value,
+    );
+
+    await tester.enterText(_apiKeyField(), 'new-key');
+    await tester.enterText(_editorField('model'), 'gpt-custom');
+    await tester.enterText(
+      _editorField('customUrl'),
+      'https://relay.example/v1/responses',
+    );
+    await tester.enterText(_editorField('systemPrompt'), 'Search precisely.');
+    await tester.tap(find.byIcon(Lucide.Check));
+    await tester.pumpAndSettle();
+
+    expect(result?.service, isA<OpenAIResponsesOptions>());
+    final saved = result!.service! as OpenAIResponsesOptions;
+    expect(saved.apiKey, 'new-key');
+    expect(saved.extraApiKeys, ['backup-key']);
+    expect(saved.model, 'gpt-custom');
+    expect(saved.customUrl, 'https://relay.example/v1/responses');
+    expect(saved.systemPrompt, 'Search precisely.');
+  });
+
   testWidgets('preserves Firecrawl sources and categories when saving', (
     tester,
   ) async {
@@ -575,6 +608,13 @@ void main() {
 Finder _apiKeyField() {
   return find.descendant(
     of: find.byKey(const ValueKey('search-service-field-apiKey')),
+    matching: find.byType(TextFormField),
+  );
+}
+
+Finder _editorField(String key) {
+  return find.descendant(
+    of: find.byKey(ValueKey('search-service-field-$key')),
     matching: find.byType(TextFormField),
   );
 }
