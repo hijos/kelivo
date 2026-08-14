@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:Kelivo/core/database/app_database.dart';
+import 'package:Kelivo/core/database/composer_draft_store.dart';
 import 'package:Kelivo/core/database/chat_database_repository.dart';
 import 'package:Kelivo/core/database/generation_run.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
+import 'package:Kelivo/core/models/composer_draft.dart';
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -111,6 +115,220 @@ void main() {
           .then((rows) => rows.map((row) => row.payload).toList()),
       ['', 'Question'],
     );
+  });
+
+  test(
+    'batch begin commits ordered sibling targets and runs atomically',
+    () async {
+      final result = await repository.beginSendGenerationBatch(
+        conversation: conversation,
+        userMessage: user('user-batch'),
+        targets: <GenerationBatchTargetInput>[
+          (
+            assistantMessage: assistant(
+              'answer-a',
+            ).copyWith(providerId: 'provider-a', modelId: 'model-a'),
+            runId: 'run-a',
+          ),
+          (
+            assistantMessage: assistant(
+              'answer-b',
+            ).copyWith(providerId: 'provider-b', modelId: 'model-b'),
+            runId: 'run-b',
+          ),
+          (
+            assistantMessage: assistant(
+              'answer-c',
+            ).copyWith(providerId: 'provider-c', modelId: 'model-c'),
+            runId: 'run-c',
+          ),
+        ],
+      );
+
+      expect(result.targets.map((target) => target.assistantMessage.id), [
+        'answer-a',
+        'answer-b',
+        'answer-c',
+      ]);
+      expect(
+        result.targets.map((target) => target.assistantMessage.groupId),
+        everyElement('answer-a'),
+      );
+      expect(result.targets.map((target) => target.assistantMessage.version), [
+        0,
+        1,
+        2,
+      ]);
+      expect(result.targets.map((target) => target.run.targetRevisionId), [
+        'answer-a',
+        'answer-b',
+        'answer-c',
+      ]);
+      final latestRuns = await repository.getLatestGenerationRunsForTargets([
+        'answer-a',
+        'answer-b',
+        'answer-c',
+      ]);
+      expect(
+        latestRuns.keys,
+        containsAll(<String>['answer-a', 'answer-b', 'answer-c']),
+      );
+      expect(
+        latestRuns.values.map((run) => run.state),
+        everyElement(GenerationRunState.preparing),
+      );
+      expect(result.conversation.versionSelections['answer-a'], 0);
+      final headers = await repository.getMessageVersionHeaders(
+        conversation.id,
+        ['answer-a'],
+      );
+      expect(headers.map((message) => message.content), everyElement(isEmpty));
+      expect(headers.map((message) => message.providerId), [
+        'provider-a',
+        'provider-b',
+        'provider-c',
+      ]);
+      expect(headers.map((message) => message.modelId), [
+        'model-a',
+        'model-b',
+        'model-c',
+      ]);
+      expect(
+        headers.map((message) => message.isStreaming),
+        everyElement(isTrue),
+      );
+      expect(await repository.getMessageIds(conversation.id), [
+        'user-batch',
+        'answer-a',
+        'answer-b',
+        'answer-c',
+      ]);
+
+      await repository.setSelectedVersion(
+        conversationId: conversation.id,
+        groupId: 'answer-a',
+        version: 2,
+      );
+      final context = await repository.getSelectedContextMessages(
+        conversation.id,
+        truncateIndex: -1,
+        limit: 20,
+      );
+      expect(context.map((message) => message.id), ['user-batch', 'answer-c']);
+    },
+  );
+
+  test('batch run conflict rolls back every target in the new turn', () async {
+    await beginFirstSend();
+    final directory = await Directory.systemTemp.createTemp('batch-draft-');
+    addTearDown(() => directory.delete(recursive: true));
+    final drafts = ComposerDraftStore(
+      database,
+      directory: () async => directory,
+    );
+    addTearDown(drafts.dispose);
+    await drafts.load(conversation.id);
+    drafts.setInput(
+      conversation.id,
+      const ComposerDraftInput(text: 'Question'),
+    );
+    final submission = await drafts.beginSubmission(
+      conversation.id,
+      drafts.peek(conversation.id)!.active,
+    );
+
+    await expectLater(
+      repository.beginSendGenerationBatch(
+        conversation: conversation,
+        userMessage: user(submission.id),
+        draftSubmission: submission,
+        targets: <GenerationBatchTargetInput>[
+          (assistantMessage: assistant('answer-new'), runId: 'run-new'),
+          (assistantMessage: assistant('answer-conflict'), runId: 'run-1'),
+        ],
+      ),
+      throwsA(anything),
+    );
+
+    expect(await repository.getMessage(submission.id), isNull);
+    final restored = ComposerDraftStore(
+      database,
+      directory: () async => directory,
+    );
+    addTearDown(restored.dispose);
+    final pending = await restored.load(conversation.id);
+    expect(pending.pending?.text, 'Question');
+    restored.restorePending(conversation.id);
+    expect(pending.active.text, 'Question');
+    await restored.flush();
+    expect(await repository.getMessage('answer-new'), isNull);
+    expect(await repository.getMessage('answer-conflict'), isNull);
+    expect(await repository.getGenerationRun('run-new'), isNull);
+    expect(await repository.getMessageIds(conversation.id), [
+      'user-1',
+      'assistant-1',
+    ]);
+  });
+
+  test('batch siblings checkpoint and finalize independently', () async {
+    final begin = await repository.beginSendGenerationBatch(
+      conversation: conversation,
+      userMessage: user('user-parallel'),
+      targets: <GenerationBatchTargetInput>[
+        (assistantMessage: assistant('parallel-a'), runId: 'parallel-run-a'),
+        (assistantMessage: assistant('parallel-b'), runId: 'parallel-run-b'),
+      ],
+    );
+    final streamingRuns = await Future.wait(
+      begin.targets.map((target) => advanceToStreaming(target.run)),
+    );
+    final partialMessages = <ChatMessage>[
+      begin.targets[0].assistantMessage.copyWith(content: 'partial-a'),
+      begin.targets[1].assistantMessage.copyWith(content: 'partial-b'),
+    ];
+
+    await Future.wait<void>([
+      for (final (index, run) in streamingRuns.indexed)
+        repository.updateStreamingCheckpoint(
+          partialMessages[index],
+          const [],
+          generationRunId: run.id,
+          checkpointSeq: 1,
+        ),
+    ]);
+
+    final terminalRuns = await Future.wait<GenerationRun>([
+      repository.finalizeGenerationRun(
+        message: partialMessages[0].copyWith(
+          content: 'final-a',
+          isStreaming: false,
+        ),
+        toolEvents: const [],
+        generationRunId: streamingRuns[0].id,
+        expectedState: streamingRuns[0].state,
+        expectedStateRevision: streamingRuns[0].stateRevision,
+        terminalState: GenerationRunState.completed,
+        checkpointSeq: 2,
+      ),
+      repository.finalizeGenerationRun(
+        message: partialMessages[1].copyWith(isStreaming: false),
+        toolEvents: const [],
+        generationRunId: streamingRuns[1].id,
+        expectedState: streamingRuns[1].state,
+        expectedStateRevision: streamingRuns[1].stateRevision,
+        terminalState: GenerationRunState.failed,
+        checkpointSeq: 2,
+        errorCode: 'generation_failed',
+      ),
+    ]);
+
+    expect(terminalRuns.map((run) => run.state), [
+      GenerationRunState.completed,
+      GenerationRunState.failed,
+    ]);
+    expect((await repository.getMessage('parallel-a'))?.content, 'final-a');
+    expect((await repository.getMessage('parallel-b'))?.content, 'partial-b');
+    expect(await repository.getActiveStreamingIds(), isEmpty);
   });
 
   test('run insert failure rolls back every linear send row', () async {

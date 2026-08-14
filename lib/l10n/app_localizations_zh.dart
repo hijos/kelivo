@@ -3399,6 +3399,54 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultModelPageChatModelSubtitle => '全局默认的聊天模型';
 
   @override
+  String get defaultModelPagePerChatModelTitle => '每个对话独立模型';
+
+  @override
+  String get defaultModelPagePerChatModelSubtitle =>
+      '开启后，在对话中切换模型只影响当前对话；关闭后会直接修改当前助手的模型，使用该助手的所有对话都会跟随。';
+
+  @override
+  String get multiModelScopeTitle => '多模型选择生效范围';
+
+  @override
+  String get multiModelScopeSubtitle => '每个范围会分别保留上次使用的模型组合';
+
+  @override
+  String get multiModelScopeAssistant => '跟随当前助手';
+
+  @override
+  String get multiModelScopeConversation => '仅当前会话';
+
+  @override
+  String get multiModelScopeNextMessage => '仅下一条消息';
+
+  @override
+  String get multiModelSelectedAnswerUnavailable =>
+      '当前选中的模型没有可用回答，请切换模型或重新生成后再发送下一条消息。';
+
+  @override
+  String multiModelCount(int count) {
+    return '$count 个模型';
+  }
+
+  @override
+  String multiModelAttachmentUnsupported(String models) {
+    return '以下模型不支持这些附件：$models';
+  }
+
+  @override
+  String get multiModelStatusGenerating => '生成中';
+
+  @override
+  String get multiModelStatusFailed => '失败';
+
+  @override
+  String get multiModelStatusCancelled => '已取消';
+
+  @override
+  String get multiModelStatusInterrupted => '已中断';
+
+  @override
   String get defaultModelPageTitleModelTitle => '标题总结模型';
 
   @override
@@ -11102,13 +11150,6 @@ class AppLocalizationsZh extends AppLocalizations {
       '在回复底部显示工具创建或修改的文件。';
 
   @override
-  String get defaultModelPagePerChatModelTitle => '每个对话独立模型';
-
-  @override
-  String get defaultModelPagePerChatModelSubtitle =>
-      '开启后，在对话中切换模型只影响当前对话；关闭后会直接修改当前助手的模型，使用该助手的所有对话都会跟随。';
-
-  @override
   String get googleFontsTitle => 'Google Fonts';
 
   @override
@@ -15844,6 +15885,54 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageChatModelSubtitle => '全局默认的聊天模型';
+
+  @override
+  String get defaultModelPagePerChatModelTitle => '每个对话独立模型';
+
+  @override
+  String get defaultModelPagePerChatModelSubtitle =>
+      '开启后，在对话中切换模型只影响当前对话；关闭后会直接修改当前助手的模型，使用该助手的所有对话都会跟随。';
+
+  @override
+  String get multiModelScopeTitle => '多模型选择生效范围';
+
+  @override
+  String get multiModelScopeSubtitle => '每个范围会分别保留上次使用的模型组合';
+
+  @override
+  String get multiModelScopeAssistant => '跟随当前助手';
+
+  @override
+  String get multiModelScopeConversation => '仅当前会话';
+
+  @override
+  String get multiModelScopeNextMessage => '仅下一条消息';
+
+  @override
+  String get multiModelSelectedAnswerUnavailable =>
+      '当前选中的模型没有可用回答，请切换模型或重新生成后再发送下一条消息。';
+
+  @override
+  String multiModelCount(int count) {
+    return '$count 个模型';
+  }
+
+  @override
+  String multiModelAttachmentUnsupported(String models) {
+    return '以下模型不支持这些附件：$models';
+  }
+
+  @override
+  String get multiModelStatusGenerating => '生成中';
+
+  @override
+  String get multiModelStatusFailed => '失败';
+
+  @override
+  String get multiModelStatusCancelled => '已取消';
+
+  @override
+  String get multiModelStatusInterrupted => '已中断';
 
   @override
   String get defaultModelPageTitleModelTitle => '标题总结模型';
@@ -23475,13 +23564,6 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
       '在回复底部显示工具创建或修改的文件。';
 
   @override
-  String get defaultModelPagePerChatModelTitle => '每个对话独立模型';
-
-  @override
-  String get defaultModelPagePerChatModelSubtitle =>
-      '开启后，在对话中切换模型只影响当前对话；关闭后会直接修改当前助手的模型，使用该助手的所有对话都会跟随。';
-
-  @override
   String get googleFontsTitle => 'Google Fonts';
 
   @override
@@ -28217,6 +28299,54 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get defaultModelPageChatModelSubtitle => '全域預設的聊天模型';
+
+  @override
+  String get defaultModelPagePerChatModelTitle => '每個對話獨立模型';
+
+  @override
+  String get defaultModelPagePerChatModelSubtitle =>
+      '開啟後，在對話中切換模型只影響目前對話；關閉後會直接修改目前助手的模型，使用該助手的所有對話都會跟隨。';
+
+  @override
+  String get multiModelScopeTitle => '多模型選擇生效範圍';
+
+  @override
+  String get multiModelScopeSubtitle => '每個範圍會分別保留上次使用的模型組合';
+
+  @override
+  String get multiModelScopeAssistant => '跟隨目前助理';
+
+  @override
+  String get multiModelScopeConversation => '僅目前對話';
+
+  @override
+  String get multiModelScopeNextMessage => '僅下一則訊息';
+
+  @override
+  String get multiModelSelectedAnswerUnavailable =>
+      '目前選取的模型沒有可用回答，請切換模型或重新產生後再傳送下一則訊息。';
+
+  @override
+  String multiModelCount(int count) {
+    return '$count 個模型';
+  }
+
+  @override
+  String multiModelAttachmentUnsupported(String models) {
+    return '以下模型不支援這些附件：$models';
+  }
+
+  @override
+  String get multiModelStatusGenerating => '生成中';
+
+  @override
+  String get multiModelStatusFailed => '失敗';
+
+  @override
+  String get multiModelStatusCancelled => '已取消';
+
+  @override
+  String get multiModelStatusInterrupted => '已中斷';
 
   @override
   String get defaultModelPageTitleModelTitle => '標題總結模型';
@@ -35923,13 +36053,6 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   @override
   String get displaySettingsPageShowProducedFilesSubtitle =>
       '在回覆底部顯示工具建立或修改的檔案。';
-
-  @override
-  String get defaultModelPagePerChatModelTitle => '每個對話獨立模型';
-
-  @override
-  String get defaultModelPagePerChatModelSubtitle =>
-      '開啟後，在對話中切換模型只影響目前對話；關閉後會直接修改目前助手的模型，使用該助手的所有對話都會跟隨。';
 
   @override
   String get googleFontsTitle => 'Google Fonts';

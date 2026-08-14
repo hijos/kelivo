@@ -4,12 +4,14 @@ import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
 import 'package:Kelivo/features/home/controllers/chat_controller.dart';
+import 'package:Kelivo/core/database/generation_run.dart';
 
 class _VersionService extends ChatService {
   final conversation = Conversation(id: 'c', title: 'Versions');
   final selected = <String, int>{'a': 1, 'b': 1};
   Completer<void>? writeGate;
   final writes = <(String, int)>[];
+  int groupBodyLoads = 0;
   final versions = [
     for (final group in ['a', 'b'])
       for (var v = 0; v < 2; v++)
@@ -20,6 +22,8 @@ class _VersionService extends ChatService {
           conversationId: 'c',
           groupId: group,
           version: v,
+          providerId: 'provider',
+          modelId: 'model-$v',
         ),
   ];
   @override
@@ -35,6 +39,19 @@ class _VersionService extends ChatService {
     for (final m in versions.where((m) => groupIds.contains(m.groupId)))
       m.copyWith(content: ''),
   ];
+  @override
+  Future<List<ChatMessage>> loadMessagesForGroups(
+    String conversationId,
+    Iterable<String> groupIds,
+  ) async {
+    groupBodyLoads++;
+    return versions.where((m) => groupIds.contains(m.groupId)).toList();
+  }
+
+  @override
+  Future<Map<String, GenerationRun>> loadLatestGenerationRunsForTargets(
+    Iterable<String> targetRevisionIds,
+  ) async => {};
   @override
   Future<void> setSelectedVersion(
     String conversationId,
@@ -93,6 +110,25 @@ class _VersionService extends ChatService {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'multi-model chips load from headers without hydrating sibling bodies',
+    () async {
+      final service = _VersionService();
+      final controller = ChatController(chatService: service);
+      addTearDown(controller.dispose);
+      await controller.setCurrentConversationAndLoad(service.conversation);
+      expect(service.groupBodyLoads, 0);
+      expect(
+        controller.messageRenderModels.map((m) => m.hasMultipleModelTargets),
+        everyElement(isTrue),
+      );
+      expect(controller.collapsedMessages.map((m) => m.content), [
+        'complete a-1',
+        'complete b-1',
+      ]);
+      expect(controller.groupedMessages['a']!.first.content, isEmpty);
+    },
+  );
   test(
     'overlapping choices in different groups both hydrate complete bodies',
     () async {

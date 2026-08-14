@@ -1275,8 +1275,11 @@ void main() {
       final corrupt = sqlite.sqlite3.open(databasePath);
       late final String originalAssetId;
       const secret = '/private/attachment-metadata';
-      final malformedPayload =
-          '{"uri":"${upload.path}","name":"live.txt","mime":["$secret"]}';
+      final malformedPayload = jsonEncode({
+        'uri': upload.path,
+        'name': 'live.txt',
+        'mime': [secret],
+      });
       try {
         originalAssetId =
             corrupt.select(

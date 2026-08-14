@@ -3298,6 +3298,9 @@ class DataSync {
           preserveExplicitEmptyInstructionList:
               preserveExplicitEmptyInstructionList,
           entityRowIds: entityRowIds,
+          remappedConversationIds:
+              _lastMergeReport?.remappedConversationIds ??
+              const <String, String>{},
         );
         if (!restoreChats) {
           beginNonCancellableCommit();
@@ -3368,6 +3371,9 @@ class DataSync {
                 scope: scope,
                 preserveExplicitEmptyInstructionList: true,
                 assumePreV3EmbeddingMigrationWhenVersionMissing: true,
+                remappedConversationIds:
+                    _lastMergeReport?.remappedConversationIds ??
+                    const <String, String>{},
               );
       }
 

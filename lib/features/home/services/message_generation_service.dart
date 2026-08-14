@@ -6,6 +6,7 @@ import '../../../core/models/assistant.dart';
 import '../../../core/models/chat_input_data.dart';
 import '../../../core/models/chat_message.dart';
 import '../../../core/models/message_part.dart';
+import '../../../core/models/chat_model_target.dart';
 import '../../../core/models/conversation.dart';
 import '../../../core/models/model_spec.dart';
 import '../../../core/models/reasoning_request.dart';
@@ -168,6 +169,7 @@ class MessageGenerationService {
     bool syncWorkspaceAttachments = true,
     bool persistWorldBookActivation = true,
     void Function(int before, int after)? onWorldBookActivationPersisted,
+    bool restrictToSearchTools = false,
   }) async {
     final cfg = settings
         .getProviderConfig(providerKey)
@@ -317,7 +319,7 @@ class MessageGenerationService {
     final mcpRouteSnapshot = generationController.captureMcpToolRoutes(
       assistant,
     );
-    final toolDefs = generationController.buildToolDefinitions(
+    var toolDefs = generationController.buildToolDefinitions(
       settings,
       assistant,
       providerKey,
@@ -327,6 +329,9 @@ class MessageGenerationService {
       workspaceContext: workspaceContext,
       conversationId: currentConversation?.id,
     );
+    if (restrictToSearchTools) {
+      toolDefs = multiModelSafeToolDefinitions(toolDefs);
+    }
     return UnprocessedRequestContext(
       apiMessages: apiMessages,
       toolDefs: toolDefs,
@@ -409,6 +414,7 @@ class MessageGenerationService {
     AskUserInteractionService? askUserService,
     String? processingMessageId,
     String? requiredAttachmentMessageId,
+    bool restrictToSearchTools = false,
   }) async {
     var requestRevision = currentConversation == null
         ? null
@@ -449,6 +455,7 @@ class MessageGenerationService {
       providerKey: providerKey,
       modelId: modelId,
       requiredAttachmentMessageId: requiredAttachmentMessageId,
+      restrictToSearchTools: restrictToSearchTools,
       onWorldBookActivationPersisted: (before, after) {
         // Accept only this preparation's own write. A history edit before or
         // during persistence invalidates provenance and must not be rebased.
@@ -564,6 +571,21 @@ class MessageGenerationService {
     );
   }
 
+  /// Multi-model branches may run concurrently, so only the side-effect-free
+  /// external search function is exposed. Provider-native web search is wired
+  /// separately and remains available without appearing in this list.
+  @visibleForTesting
+  static List<Map<String, dynamic>> multiModelSafeToolDefinitions(
+    Iterable<Map<String, dynamic>> definitions,
+  ) {
+    return definitions
+        .where((definition) {
+          final function = definition['function'];
+          return function is Map && function['name'] == 'search_web';
+        })
+        .toList(growable: false);
+  }
+
   /// Create user message from input data.
   Future<ChatMessage> createUserMessage({
     required String conversationId,
@@ -591,38 +613,37 @@ class MessageGenerationService {
     required String modelId,
     required String providerKey,
   }) async {
+    final result = await beginSendGenerationBatch(
+      conversationId: conversationId,
+      input: input,
+      assistant: assistant,
+      targets: <ChatModelTarget>[
+        ChatModelTarget(providerKey: providerKey, modelId: modelId),
+      ],
+    );
+    final primary = result.primaryTarget;
+    return (
+      userMessage: result.userMessage,
+      assistantMessage: primary.assistantMessage,
+      runId: primary.run?.id,
+    );
+  }
+
+  Future<ChatGenerationBatchResult> beginSendGenerationBatch({
+    required String conversationId,
+    required ChatInputData input,
+    required Assistant? assistant,
+    required List<ChatModelTarget> targets,
+  }) async {
     final userParts = await buildPersistedUserMessageParts(
       input,
       assistant: assistant,
     );
-    if (chatService.isTemporaryConversation(conversationId)) {
-      final userMessage = await chatService.addMessage(
-        conversationId: conversationId,
-        role: 'user',
-        parts: userParts,
-      );
-      final assistantMessage = await createAssistantPlaceholder(
-        conversationId: conversationId,
-        modelId: modelId,
-        providerKey: providerKey,
-      );
-      return (
-        userMessage: userMessage,
-        assistantMessage: assistantMessage,
-        runId: null,
-      );
-    }
-    final result = await chatService.beginSendGeneration(
+    return chatService.beginSendGenerationBatch(
       conversationId: conversationId,
       userParts: userParts,
-      modelId: modelId,
-      providerId: providerKey,
       draftSubmission: input.draftSubmission,
-    );
-    return (
-      userMessage: result.userMessage!,
-      assistantMessage: result.assistantMessage,
-      runId: result.run.id,
+      targets: targets,
     );
   }
 
