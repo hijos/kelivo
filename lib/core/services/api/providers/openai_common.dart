@@ -1,23 +1,79 @@
 part of '../chat_api_service.dart';
 
-Uri _openAICompatibleUrl(ProviderConfig config) {
-  final rawBase = config.baseUrl.endsWith('/')
-      ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-      : config.baseUrl;
-  final baseUri = Uri.parse(rawBase);
-  if (config.useResponseApi == true) {
-    final normalizedPath = baseUri.path.replaceAll(RegExp(r'/$'), '');
-    if (BuiltInToolsHelper.isDashScopeProvider(config) &&
-        normalizedPath != '/api/v2/apps/protocols/compatible-mode/v1') {
-      return Uri.parse(
-        '${baseUri.scheme}://${baseUri.authority}'
-        '/api/v2/apps/protocols/compatible-mode/v1/responses',
-      );
-    }
-    return Uri.parse('$rawBase/responses');
+bool _supportsResponsesBuiltInSearch(
+  ProviderConfig config,
+  String upstreamModelId,
+) {
+  if (BuiltInToolsHelper.isOpenRouterProvider(config)) return false;
+  if (BuiltInToolsHelper.isDeepSeekProvider(config) ||
+      BuiltInToolsHelper.isDeepSeekModel(upstreamModelId)) {
+    return true;
   }
-  final path = config.chatPath ?? '/chat/completions';
-  return Uri.parse('$rawBase$path');
+  if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(
+    upstreamModelId,
+  )) {
+    return true;
+  }
+  if (BuiltInToolsHelper.isDashScopeProvider(config)) {
+    return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
+      upstreamModelId,
+    );
+  }
+  if (BuiltInToolsHelper.isArkProvider(config)) {
+    return BuiltInToolsHelper.isDoubaoResponsesBuiltInSearchSupportedModel(
+      upstreamModelId,
+    );
+  }
+  return false;
+}
+
+Map<String, dynamic>? _responsesBuiltInSearchTool({
+  required ProviderConfig config,
+  required String modelId,
+  required String upstreamModelId,
+}) {
+  if (config.useResponseApi != true ||
+      !_supportsResponsesBuiltInSearch(config, upstreamModelId) ||
+      !_builtInTools(config, modelId).contains(BuiltInToolNames.search)) {
+    return null;
+  }
+
+  if (BuiltInToolsHelper.isDeepSeekProvider(config) ||
+      BuiltInToolsHelper.isDeepSeekModel(upstreamModelId) ||
+      BuiltInToolsHelper.isDashScopeProvider(config) ||
+      BuiltInToolsHelper.isArkProvider(config)) {
+    return <String, dynamic>{'type': 'web_search'};
+  }
+
+  Map<String, dynamic> webSearch = const <String, dynamic>{};
+  try {
+    final override = config.modelOverrides[modelId];
+    if (override is Map && override['webSearch'] is Map) {
+      webSearch = (override['webSearch'] as Map).cast<String, dynamic>();
+    }
+  } catch (_) {}
+  final usePreview =
+      webSearch['preview'] == true ||
+      (webSearch['tool'] ?? '').toString() == 'preview';
+  final entry = <String, dynamic>{
+    'type': usePreview ? 'web_search_preview' : 'web_search',
+  };
+  if (webSearch['allowed_domains'] is List &&
+      (webSearch['allowed_domains'] as List).isNotEmpty) {
+    entry['filters'] = {
+      'allowed_domains': List<String>.from(
+        (webSearch['allowed_domains'] as List).map((e) => e.toString()),
+      ),
+    };
+  }
+  if (webSearch['user_location'] is Map) {
+    entry['user_location'] = (webSearch['user_location'] as Map)
+        .cast<String, dynamic>();
+  }
+  if (usePreview && webSearch['search_context_size'] is String) {
+    entry['search_context_size'] = webSearch['search_context_size'];
+  }
+  return entry;
 }
 
 Future<String> _saveResponsesImageGenerationMarkdown(
@@ -1296,6 +1352,7 @@ void _applyVendorReasoningKnobs(
   } else if (info.isDeepSeek) {
     if (isReasoning) {
       body['thinking'] = {'type': off ? 'disabled' : 'enabled'};
+      if (off) body.remove('reasoning_effort');
     } else {
       body.remove('thinking');
       body.remove('reasoning_effort');
@@ -1320,7 +1377,7 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
   bool stream = true,
 }) async* {
   final upstreamModelId = _apiModelId(config, modelId);
-  final url = _openAICompatibleUrl(config);
+  final url = resolveOpenAICompatibleUrl(config);
   // Claude models served through OpenAI-compatible proxies require signed
   // thinking blocks; unsigned reasoning echoes are stripped before sending.
   final isClaudeUpstream = upstreamModelId.toLowerCase().contains('claude');
@@ -1432,70 +1489,13 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
       addResponsesBuiltInTool({'type': 'image_generation'});
     }
 
-    // Built-in web search for Responses API when enabled on supported models
-    bool isResponsesWebSearchSupported(String id) {
-      if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(id)) {
-        return true;
-      }
-      if (BuiltInToolsHelper.isDashScopeProvider(config)) {
-        return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
-          id,
-        );
-      }
-      if (BuiltInToolsHelper.isArkProvider(config)) {
-        return BuiltInToolsHelper.isDoubaoResponsesBuiltInSearchSupportedModel(
-          id,
-        );
-      }
-      return false;
-    }
-
-    if (isResponsesWebSearchSupported(upstreamModelId)) {
-      if (builtIns.contains(BuiltInToolNames.search)) {
-        if (BuiltInToolsHelper.isDashScopeProvider(config) ||
-            BuiltInToolsHelper.isArkProvider(config)) {
-          addResponsesBuiltInTool({'type': 'web_search'});
-        } else {
-          // Optional per-model configuration under modelOverrides[modelId]['webSearch']
-          Map<String, dynamic> ws = const <String, dynamic>{};
-          try {
-            final ov = config.modelOverrides[modelId];
-            if (ov is Map && ov['webSearch'] is Map) {
-              ws = (ov['webSearch'] as Map).cast<String, dynamic>();
-            }
-          } catch (_) {}
-          final usePreview =
-              (ws['preview'] == true) ||
-              ((ws['tool'] ?? '').toString() == 'preview');
-          final entry = <String, dynamic>{
-            'type': usePreview ? 'web_search_preview' : 'web_search',
-          };
-          // Domain filters
-          if (ws['allowed_domains'] is List &&
-              (ws['allowed_domains'] as List).isNotEmpty) {
-            entry['filters'] = {
-              'allowed_domains': List<String>.from(
-                (ws['allowed_domains'] as List).map((e) => e.toString()),
-              ),
-            };
-          }
-          // User location
-          if (ws['user_location'] is Map) {
-            entry['user_location'] = (ws['user_location'] as Map)
-                .cast<String, dynamic>();
-          }
-          // Search context size (preview tool only)
-          if (usePreview && ws['search_context_size'] is String) {
-            entry['search_context_size'] = ws['search_context_size'];
-          }
-          addResponsesBuiltInTool(entry);
-          // Optionally request sources in output
-          if (ws['include_sources'] == true) {
-            // Merge/append include array
-            // We'll add this after input loop when building body
-          }
-        }
-      }
+    final responsesSearchTool = _responsesBuiltInSearchTool(
+      config: config,
+      modelId: modelId,
+      upstreamModelId: upstreamModelId,
+    );
+    if (responsesSearchTool != null) {
+      addResponsesBuiltInTool(responsesSearchTool);
     }
     // Collect assistant images to attach to the last user message.
     // Use last *user* index so tool follow-ups still receive stashed media.
@@ -1779,7 +1779,9 @@ Stream<ChatStreamChunk> _sendOpenAIStream(
       thinkingBudget: thinkingBudget,
     );
     // Append include parameter if we opted into sources via overrides
-    if (!BuiltInToolsHelper.isDashScopeProvider(config)) {
+    if (!BuiltInToolsHelper.isDashScopeProvider(config) &&
+        !BuiltInToolsHelper.isDeepSeekProvider(config) &&
+        !BuiltInToolsHelper.isDeepSeekModel(upstreamModelId)) {
       try {
         final ov = config.modelOverrides[modelId];
         final ws = (ov is Map ? ov['webSearch'] : null);

@@ -4,9 +4,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:Kelivo/core/providers/settings_provider.dart';
+import 'package:Kelivo/core/services/api/builtin_tools.dart';
 import 'package:Kelivo/core/services/api/chat_api_service.dart';
 
-ProviderConfig _deepSeekConfig(String baseUrl, {bool useResponseApi = false}) {
+ProviderConfig _deepSeekConfig(
+  String baseUrl, {
+  bool useResponseApi = false,
+  Map<String, dynamic> modelOverrides = const <String, dynamic>{},
+}) {
   return ProviderConfig(
     id: 'DeepSeekCompatTest',
     enabled: true,
@@ -15,6 +20,7 @@ ProviderConfig _deepSeekConfig(String baseUrl, {bool useResponseApi = false}) {
     baseUrl: baseUrl,
     providerType: ProviderKind.openai,
     useResponseApi: useResponseApi,
+    modelOverrides: modelOverrides,
   );
 }
 
@@ -25,6 +31,182 @@ Future<Map<String, dynamic>> _readJsonBody(HttpRequest request) async {
 
 void main() {
   group('DeepSeek OpenAI compatibility', () {
+    test('Responses built-in search supports DeepSeek provider or model', () {
+      final providerConfig = _deepSeekConfig(
+        'https://relay.example/v1',
+        useResponseApi: true,
+      );
+      final modelConfig = ProviderConfig(
+        id: 'CustomRelay',
+        enabled: true,
+        name: 'CustomRelay',
+        apiKey: 'test-key',
+        baseUrl: 'https://relay.example/v1',
+        providerType: ProviderKind.openai,
+        useResponseApi: true,
+      );
+
+      expect(
+        BuiltInToolsHelper.supportsBuiltInSearchForModel(
+          cfg: providerConfig,
+          modelId: 'vendor-model',
+        ),
+        isTrue,
+      );
+      expect(
+        BuiltInToolsHelper.supportsBuiltInSearchForModel(
+          cfg: modelConfig,
+          modelId: 'deepseek-v4-flash',
+        ),
+        isTrue,
+      );
+      expect(
+        BuiltInToolsHelper.supportsBuiltInSearchForModel(
+          cfg: modelConfig,
+          modelId: 'vendor-model',
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'Responses requests inject bare DeepSeek web search without include',
+      () async {
+        final paths = <String>[];
+        final bodies = <Map<String, dynamic>>[];
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        server.listen((request) async {
+          paths.add(request.uri.path);
+          final body = await _readJsonBody(request);
+          bodies.add(body);
+          request.response.statusCode = HttpStatus.ok;
+          if (body['stream'] == true) {
+            request.response.headers.contentType = ContentType(
+              'text',
+              'event-stream',
+              charset: 'utf-8',
+            );
+            final events = <Map<String, dynamic>>[
+              {'type': 'response.reasoning_text.delta', 'delta': 'thinking'},
+              {'type': 'response.output_text.delta', 'delta': 'ok'},
+              {
+                'type': 'response.completed',
+                'response': {
+                  'status': 'completed',
+                  'usage': {
+                    'input_tokens': 1,
+                    'output_tokens': 1,
+                    'total_tokens': 2,
+                  },
+                  'output': [
+                    {
+                      'type': 'web_search_call',
+                      'id': 'ws_1',
+                      'status': 'completed',
+                      'action': {'type': 'search', 'query': 'Kelivo'},
+                    },
+                    {
+                      'type': 'message',
+                      'role': 'assistant',
+                      'content': [
+                        {
+                          'type': 'output_text',
+                          'text': 'ok',
+                          'annotations': [
+                            {
+                              'type': 'url_citation',
+                              'url': 'https://example.com/source',
+                              'title': 'Example source',
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ];
+            for (final event in events) {
+              request.response.write('data: ${jsonEncode(event)}\n\n');
+            }
+          } else {
+            request.response.headers.contentType = ContentType.json;
+            request.response.write(
+              jsonEncode({
+                'id': 'resp-deepseek-search',
+                'object': 'response',
+                'status': 'completed',
+                'output_text': 'ok',
+                'output': const [],
+                'usage': {
+                  'input_tokens': 1,
+                  'output_tokens': 1,
+                  'total_tokens': 2,
+                },
+              }),
+            );
+          }
+          await request.response.close();
+        });
+
+        const modelId = 'deepseek-v4-flash';
+        final config = _deepSeekConfig(
+          'http://${server.address.address}:${server.port}/v1',
+          useResponseApi: true,
+          modelOverrides: {
+            modelId: {
+              'builtInTools': [BuiltInToolNames.search],
+              'webSearch': {
+                'preview': true,
+                'include_sources': true,
+                'allowed_domains': ['example.com'],
+              },
+            },
+          },
+        );
+
+        final chunks = await ChatApiService.sendMessageStream(
+          config: config,
+          modelId: modelId,
+          messages: const [
+            {'role': 'user', 'content': 'search'},
+          ],
+        ).toList();
+        final generated = await ChatApiService.generateText(
+          config: config,
+          modelId: modelId,
+          prompt: 'search',
+        );
+
+        expect(chunks.map((chunk) => chunk.reasoning ?? '').join(), 'thinking');
+        expect(chunks.map((chunk) => chunk.content).join(), 'ok');
+        final searchResult = chunks
+            .expand((chunk) => chunk.toolResults ?? const <ToolResultInfo>[])
+            .single;
+        expect(searchResult.name, 'search_web');
+        expect(jsonDecode(searchResult.content), {
+          'items': [
+            {
+              'index': 1,
+              'url': 'https://example.com/source',
+              'title': 'Example source',
+            },
+          ],
+        });
+        expect(chunks.last.isDone, isTrue);
+        expect(generated, 'ok');
+        expect(paths, ['/v1/responses', '/v1/responses']);
+        expect(bodies, hasLength(2));
+        for (final body in bodies) {
+          expect(body['tools'], [
+            {'type': 'web_search'},
+          ]);
+          expect(body.containsKey('include'), isFalse);
+        }
+      },
+    );
+
     test('Responses non-stream returns reasoning and cached tokens', () async {
       late Map<String, dynamic> requestBody;
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

@@ -81,7 +81,7 @@ const OpenAIReasoningSupport _museSpark11Support = OpenAIReasoningSupport(
   effortParameterSupported: false,
 );
 const OpenAIReasoningSupport _deepSeekSupport = OpenAIReasoningSupport(
-  supportedEfforts: <String>['low', 'medium', 'high', 'xhigh'],
+  supportedEfforts: <String>['none', 'low', 'medium', 'high', 'xhigh', 'max'],
 );
 const OpenAIReasoningSupport _mimoSupport = OpenAIReasoningSupport(
   supportedEfforts: <String>['none', 'low', 'medium', 'high'],

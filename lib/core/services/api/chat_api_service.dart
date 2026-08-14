@@ -18,6 +18,7 @@ import 'package:Kelivo/secrets/fallback.dart';
 import '../../../utils/markdown_media_sanitizer.dart';
 import '../../../utils/unicode_sanitizer.dart';
 import 'builtin_tools.dart';
+import 'openai_compatible_url.dart';
 import 'kimi_formula_search.dart';
 import 'gemini_tool_config.dart';
 import '../logging/context_log_models.dart';
@@ -752,7 +753,7 @@ class ChatApiService {
     final safePrompt = UnicodeSanitizer.sanitize(prompt);
     try {
       if (kind == ProviderKind.openai) {
-        final url = _openAICompatibleUrl(config);
+        final url = resolveOpenAICompatibleUrl(config);
         Map<String, dynamic> body;
         final effectiveInfo = _effectiveModelInfo(config, modelId);
         final isReasoning = effectiveInfo.abilities.contains(
@@ -767,63 +768,13 @@ class ChatApiService {
         if (config.useResponseApi == true) {
           // Inject built-in web_search tool when enabled and supported
           final toolsList = <Map<String, dynamic>>[];
-          bool isResponsesWebSearchSupported(String id) {
-            if (BuiltInToolsHelper.isOpenAIResponsesBuiltInSearchSupportedModel(
-              id,
-            )) {
-              return true;
-            }
-            if (BuiltInToolsHelper.isDashScopeProvider(config)) {
-              return BuiltInToolsHelper.isDashScopeResponsesBuiltInSearchSupportedModel(
-                id,
-              );
-            }
-            if (BuiltInToolsHelper.isArkProvider(config)) {
-              return BuiltInToolsHelper.isDoubaoResponsesBuiltInSearchSupportedModel(
-                id,
-              );
-            }
-            return false;
-          }
-
-          if (isResponsesWebSearchSupported(upstreamModelId)) {
-            final builtIns = _builtInTools(config, modelId);
-            if (builtIns.contains(BuiltInToolNames.search)) {
-              if (BuiltInToolsHelper.isDashScopeProvider(config) ||
-                  BuiltInToolsHelper.isArkProvider(config)) {
-                toolsList.add({'type': 'web_search'});
-              } else {
-                Map<String, dynamic> ws = const <String, dynamic>{};
-                try {
-                  final ov = config.modelOverrides[modelId];
-                  if (ov is Map && ov['webSearch'] is Map) {
-                    ws = (ov['webSearch'] as Map).cast<String, dynamic>();
-                  }
-                } catch (_) {}
-                final usePreview =
-                    (ws['preview'] == true) ||
-                    ((ws['tool'] ?? '').toString() == 'preview');
-                final entry = <String, dynamic>{
-                  'type': usePreview ? 'web_search_preview' : 'web_search',
-                };
-                if (ws['allowed_domains'] is List &&
-                    (ws['allowed_domains'] as List).isNotEmpty) {
-                  entry['filters'] = {
-                    'allowed_domains': List<String>.from(
-                      (ws['allowed_domains'] as List).map((e) => e.toString()),
-                    ),
-                  };
-                }
-                if (ws['user_location'] is Map) {
-                  entry['user_location'] = (ws['user_location'] as Map)
-                      .cast<String, dynamic>();
-                }
-                if (usePreview && ws['search_context_size'] is String) {
-                  entry['search_context_size'] = ws['search_context_size'];
-                }
-                toolsList.add(entry);
-              }
-            }
+          final responsesSearchTool = _responsesBuiltInSearchTool(
+            config: config,
+            modelId: modelId,
+            upstreamModelId: upstreamModelId,
+          );
+          if (responsesSearchTool != null) {
+            toolsList.add(responsesSearchTool);
           }
           body = {
             'model': upstreamModelId,
