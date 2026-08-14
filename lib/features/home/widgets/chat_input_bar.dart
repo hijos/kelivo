@@ -118,6 +118,7 @@ class ChatInputBar extends StatefulWidget {
     this.chatModelId,
     this.onSend,
     this.onStop,
+    this.canStop = true,
     this.onSelectModel,
     this.onLongPressSelectModel,
     this.onOpenTools,
@@ -165,6 +166,7 @@ class ChatInputBar extends StatefulWidget {
     this.ocrActive = false,
     this.onToggleOcr,
     this.conversationId,
+    this.allowImagesApiRouting = true,
     this.sendButtonTooltip,
     this.backgroundImageActive = false,
     this.inputBackgroundOpacityLight =
@@ -175,6 +177,7 @@ class ChatInputBar extends StatefulWidget {
 
   final Future<ChatInputSubmissionResult> Function(ChatInputData)? onSend;
   final VoidCallback? onStop;
+  final bool canStop;
   final VoidCallback? onSelectModel;
   final VoidCallback? onLongPressSelectModel;
   final VoidCallback? onOpenTools;
@@ -227,6 +230,7 @@ class ChatInputBar extends StatefulWidget {
   /// conversation override -> assistant -> global default.
   final String? chatModelProviderKey;
   final String? chatModelId;
+  final bool allowImagesApiRouting;
   final String? sendButtonTooltip;
   final bool backgroundImageActive;
   final double inputBackgroundOpacityLight;
@@ -315,6 +319,10 @@ class _ChatInputBarState extends State<ChatInputBar>
   }
 
   bool _supportsImagesApiRouting(BuildContext context) {
+    if (!widget.allowImagesApiRouting) {
+      _imageModeModelKey = null;
+      return false;
+    }
     final settings = context.watch<SettingsProvider>();
     final providerKey = widget.chatModelProviderKey;
     final modelId = widget.chatModelId;
@@ -344,6 +352,7 @@ class _ChatInputBarState extends State<ChatInputBar>
   }
 
   bool get _allowImagesApiRouting {
+    if (!widget.allowImagesApiRouting) return false;
     final key = _imageModeModelKey;
     return key == null || key != _dismissedImageModeModelKey;
   }
@@ -3047,7 +3056,9 @@ class _ChatInputBarState extends State<ChatInputBar>
                                               loading: widget.loading,
                                               onSend: _handleSend,
                                               onStop: widget.loading
-                                                  ? widget.onStop
+                                                  ? (widget.canStop
+                                                        ? widget.onStop
+                                                        : null)
                                                   : null,
                                               color: theme.colorScheme.primary,
                                               icon: Lucide.ArrowUp,
@@ -3393,12 +3404,9 @@ class _CompactSendButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final bg = (enabled || loading)
-        ? color
-        : cs.onSurface.withValues(alpha: 0.12);
-    final fg = (enabled || loading)
-        ? cs.onPrimary
-        : cs.onSurface.withValues(alpha: 0.38);
+    final active = enabled || (loading && onStop != null);
+    final bg = active ? color : cs.onSurface.withValues(alpha: 0.12);
+    final fg = active ? cs.onPrimary : cs.onSurface.withValues(alpha: 0.38);
 
     final button = Material(
       color: bg,

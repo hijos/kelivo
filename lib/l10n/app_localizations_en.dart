@@ -3293,6 +3293,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultModelPageChatModelSubtitle => 'Global default chat model';
 
   @override
+  String get defaultModelPagePerChatModelTitle => 'Per-Chat Model';
+
+  @override
+  String get defaultModelPagePerChatModelSubtitle =>
+      'On: picking a model in a chat applies to that chat only. Off: it becomes the current assistant\'s model, so every chat using that assistant follows it.';
+
+  @override
+  String get multiModelScopeTitle => 'Multi-model selection applies to';
+
+  @override
+  String get multiModelScopeSubtitle =>
+      'Keep separate model combinations for each scope';
+
+  @override
+  String get multiModelScopeAssistant => 'Current assistant';
+
+  @override
+  String get multiModelScopeConversation => 'Current conversation';
+
+  @override
+  String get multiModelScopeNextMessage => 'Next message only';
+
+  @override
+  String get multiModelSelectedAnswerUnavailable =>
+      'The selected model has no usable answer. Switch models or regenerate before sending the next message.';
+
+  @override
+  String multiModelCount(int count) {
+    return '$count models';
+  }
+
+  @override
+  String multiModelAttachmentUnsupported(String models) {
+    return 'These attachments are not supported by: $models';
+  }
+
+  @override
+  String get multiModelStatusGenerating => 'Generating';
+
+  @override
+  String get multiModelStatusFailed => 'Failed';
+
+  @override
+  String get multiModelStatusCancelled => 'Cancelled';
+
+  @override
+  String get multiModelStatusInterrupted => 'Interrupted';
+
+  @override
   String get defaultModelPageTitleModelTitle => 'Title Summary Model';
 
   @override
@@ -10925,13 +10974,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reasoningBudgetSliderMax => 'Max';
-
-  @override
-  String get defaultModelPagePerChatModelTitle => 'Per-Chat Model';
-
-  @override
-  String get defaultModelPagePerChatModelSubtitle =>
-      'On: picking a model in a chat applies to that chat only. Off: it becomes the current assistant\'s model, so every chat using that assistant follows it.';
 
   @override
   String get googleFontsTitle => 'Google Fonts';

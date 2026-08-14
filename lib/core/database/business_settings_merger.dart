@@ -11,6 +11,7 @@ final class BusinessSettingsMerger {
   static const _activeIdsByAssistantKey =
       'instruction_injections_active_ids_by_assistant_v1';
   static const _asrServicesKey = 'asr_services_v1';
+  static const _chatModelSelectionsKey = 'chat_model_selections_v1';
   static const _providerOrderKey = 'providers_order_v1';
   static const _pinnedModelsKey = 'pinned_models_v1';
   static const _relationshipMapKeys = <String>{
@@ -49,6 +50,7 @@ final class BusinessSettingsMerger {
     BusinessSnapshot existing,
     BusinessSnapshot incoming, {
     required Set<String> incomingKeys,
+    Map<String, String> remappedConversationIds = const <String, String>{},
   }) {
     final effectiveIncomingKeys = <String>{...incomingKeys};
     if (incoming.preferences.containsKey(_activeIdsByAssistantKey)) {
@@ -135,6 +137,12 @@ final class BusinessSettingsMerger {
           imported as String,
           key,
         );
+      } else if (key == _chatModelSelectionsKey) {
+        preferences[key] = mergeChatModelSelections(
+          incomingValue: imported as String,
+          existingValue: preferences[key] as String?,
+          remappedConversationIds: remappedConversationIds,
+        );
       } else if (_relationshipMapKeys.contains(key)) {
         preferences[key] = _mergeJsonMapsPreferExisting(
           preferences[key] as String?,
@@ -146,6 +154,59 @@ final class BusinessSettingsMerger {
     }
 
     return BusinessSnapshot(entities: entities, preferences: preferences);
+  }
+
+  static String mergeChatModelSelections({
+    required String incomingValue,
+    String? existingValue,
+    Map<String, String> remappedConversationIds = const <String, String>{},
+  }) {
+    final incoming = _decodeJsonMap(incomingValue, _chatModelSelectionsKey);
+    final existing = existingValue == null || existingValue.isEmpty
+        ? const <String, dynamic>{}
+        : _decodeJsonMap(existingValue, _chatModelSelectionsKey);
+
+    Map<String, dynamic> selectionIndex(
+      Map<String, dynamic> source,
+      String key,
+    ) {
+      final raw = source[key];
+      if (raw == null) return const <String, dynamic>{};
+      if (raw is! Map) throw const FormatException(_chatModelSelectionsKey);
+      return raw.map((key, value) => MapEntry(key.toString(), value));
+    }
+
+    Map<String, dynamic> mergeIndex(String key, {required bool remap}) {
+      final imported = selectionIndex(incoming, key);
+      final remapped = <String, dynamic>{};
+      for (final entry in imported.entries) {
+        final targetKey = remap
+            ? (remappedConversationIds[entry.key] ?? entry.key)
+            : entry.key;
+        remapped.putIfAbsent(targetKey, () => entry.value);
+      }
+      return <String, dynamic>{...remapped, ...selectionIndex(existing, key)};
+    }
+
+    return jsonEncode(<String, dynamic>{
+      ...incoming,
+      ...existing,
+      'version': existing['version'] ?? incoming['version'] ?? 1,
+      'scope': existing['scope'] ?? incoming['scope'] ?? 'conversation',
+      'assistants': mergeIndex('assistants', remap: false),
+      'conversations': mergeIndex('conversations', remap: true),
+      'nextMessages': mergeIndex('nextMessages', remap: true),
+    });
+  }
+
+  static Map<String, dynamic> _decodeJsonMap(String raw, String key) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) throw FormatException(key);
+      return decoded.map((key, value) => MapEntry(key.toString(), value));
+    } on FormatException {
+      throw FormatException(key);
+    }
   }
 
   static List<BusinessEntityValue> _mergeAssistants(

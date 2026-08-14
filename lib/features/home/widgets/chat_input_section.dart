@@ -11,6 +11,8 @@ import '../../../core/models/skills_binding.dart';
 import '../../../core/providers/asr_provider.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
+import '../../../core/providers/chat_model_selection_provider.dart';
+import '../../../core/models/chat_model_target.dart';
 import '../../../core/providers/mcp_provider.dart';
 import '../../../core/providers/quick_phrase_provider.dart';
 import '../../../core/providers/world_book_provider.dart';
@@ -49,6 +51,7 @@ class ChatInputSection extends StatelessWidget {
     required this.mediaController,
     required this.isTablet,
     required this.isLoading,
+    this.canStop = true,
     required this.isToolModel,
     required this.isReasoningModel,
     required this.isReasoningEnabled,
@@ -89,6 +92,7 @@ class ChatInputSection extends StatelessWidget {
   final ChatInputBarController mediaController;
   final bool isTablet;
   final bool isLoading;
+  final bool canStop;
 
   // Model capability checkers
   final IsToolModelCallback isToolModel;
@@ -147,14 +151,25 @@ class ChatInputSection extends StatelessWidget {
     final asr = context.watch<AsrProvider>();
     final ap = context.watch<AssistantProvider>();
     final a = ap.currentAssistant;
+    final assistantId = a?.id;
 
     final pk = chatModelProviderKey;
     final mid = chatModelId;
+    final selectionProvider = context.watch<ChatModelSelectionProvider?>();
+    final targets = pk != null && mid != null
+        ? selectionProvider?.effectiveTargets(
+                fallback: ChatModelTarget(providerKey: pk, modelId: mid),
+                assistantId: assistantId,
+                conversationId: conversationId,
+              ) ??
+              <ChatModelTarget>[ChatModelTarget(providerKey: pk, modelId: mid)]
+        : const <ChatModelTarget>[];
+    final multiModelActive = targets.length > 1;
 
     // Enforce model capabilities: disable MCP selection if model doesn't
     // support tools. Skipped while the conversation overrides the model —
     // these writes land on the assistant and would leak across conversations.
-    if (!chatModelIsConversationOverride) {
+    if (!multiModelActive && !chatModelIsConversationOverride) {
       _enforceModelCapabilities(context, settings, ap, a, pk, mid);
     }
 
@@ -176,6 +191,7 @@ class ChatInputSection extends StatelessWidget {
       onSelectModel: onSelectModel,
       onLongPressSelectModel: onLongPressSelectModel,
       conversationId: conversationId,
+      allowImagesApiRouting: !multiModelActive,
       onOpenTools: onOpenTools,
       onLongPressTools: onLongPressTools,
       onOpenWorkspace: onOpenWorkspace,
@@ -185,7 +201,10 @@ class ChatInputSection extends StatelessWidget {
       skillsActive:
           isDesktop && onOpenSkills != null && _isSkillsActive(context, a),
       onStop: onStop,
-      modelIcon: (pk != null && mid != null)
+      canStop: canStop,
+      modelIcon: multiModelActive
+          ? _MultiModelIcon(targets: targets)
+          : (pk != null && mid != null)
           ? CurrentModelIcon(
               providerKey: pk,
               modelId: mid,
@@ -219,7 +238,7 @@ class ChatInputSection extends StatelessWidget {
       hasQueuedInput: hasQueuedInput,
       queuedPreviewText: queuedPreviewText,
       onCancelQueuedInput: onCancelQueuedInput,
-      showToolsButton: _shouldShowToolsButton(pk, mid),
+      showToolsButton: !multiModelActive && _shouldShowToolsButton(pk, mid),
       toolsActive: _isToolsActive(context, a, workspaceBound),
       showQuickPhraseButton: _hasQuickPhrases(context, a),
       onQuickPhrase: onQuickPhrase,
@@ -393,5 +412,57 @@ class ChatInputSection extends StatelessWidget {
         ? quickPhraseProvider.getForAssistant(a.id).length
         : 0;
     return (globalCount + assistantCount) > 0;
+  }
+}
+
+class _MultiModelIcon extends StatelessWidget {
+  const _MultiModelIcon({required this.targets});
+
+  final List<ChatModelTarget> targets;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final visible = targets.take(3).toList(growable: false);
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final (index, target) in visible.indexed)
+            Positioned(
+              left: index * 7,
+              top: index * 3,
+              child: CurrentModelIcon(
+                providerKey: target.providerKey,
+                modelId: target.modelId,
+                size: 25,
+              ),
+            ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: cs.primary,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                '${targets.length}',
+                style: TextStyle(
+                  color: cs.onPrimary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

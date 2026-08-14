@@ -40,6 +40,7 @@ final class BusinessRestoreService {
     bool preserveExplicitEmptyInstructionList = false,
     Map<String, Object?>? entityRowIds,
     bool assumePreV3EmbeddingMigrationWhenVersionMissing = false,
+    Map<String, String> remappedConversationIds = const <String, String>{},
   }) async {
     // Validate and normalize before opening the write transaction. The
     // transaction then merges those immutable imported rows with its current
@@ -59,6 +60,7 @@ final class BusinessRestoreService {
         current,
         incoming,
         incomingKeys: imported.keys.toSet(),
+        remappedConversationIds: remappedConversationIds,
       );
     }, writeReceipt: true);
   }
