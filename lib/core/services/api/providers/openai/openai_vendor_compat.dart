@@ -577,6 +577,7 @@ void applyVendorReasoningKnobs(
   } else if (info.isDeepSeek) {
     if (isReasoning) {
       body['thinking'] = {'type': off ? 'disabled' : 'enabled'};
+      if (off) body.remove('reasoning_effort');
     } else {
       body.remove('thinking');
       body.remove('reasoning_effort');

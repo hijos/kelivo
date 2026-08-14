@@ -12,6 +12,7 @@ import '../../../../../utils/sandbox_path_resolver.dart';
 import '../../builtin_tools.dart';
 import '../../chat_api_helpers.dart';
 import '../../kimi_formula_search.dart';
+import '../../openai_compatible_url.dart';
 import '../../stream/sse_framing.dart';
 import '../../stream/stream_chunk.dart';
 import '../../stream/stream_chunk_emit.dart';
@@ -21,26 +22,6 @@ import 'chat_completions_decoder.dart';
 import 'openai_vendor_compat.dart';
 import 'responses_api.dart';
 import 'responses_decoder.dart';
-
-Uri _openAICompatibleUrl(ProviderConfig config) {
-  final rawBase = config.baseUrl.endsWith('/')
-      ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-      : config.baseUrl;
-  final baseUri = Uri.parse(rawBase);
-  if (config.useResponseApi == true) {
-    final normalizedPath = baseUri.path.replaceAll(RegExp(r'/$'), '');
-    if (BuiltInToolsHelper.isDashScopeProvider(config) &&
-        normalizedPath != '/api/v2/apps/protocols/compatible-mode/v1') {
-      return Uri.parse(
-        '${baseUri.scheme}://${baseUri.authority}'
-        '/api/v2/apps/protocols/compatible-mode/v1/responses',
-      );
-    }
-    return Uri.parse('$rawBase/responses');
-  }
-  final path = config.chatPath ?? '/chat/completions';
-  return Uri.parse('$rawBase$path');
-}
 
 /// Accumulates streamed `reasoning_details` entries.
 ///
@@ -121,7 +102,7 @@ Stream<StreamChunk> sendOpenAIStream(
           modelId,
         ).where((name) => name == BuiltInToolNames.search)
       : null;
-  final url = _openAICompatibleUrl(config);
+  final url = resolveOpenAICompatibleUrl(config);
   // Claude models served through OpenAI-compatible proxies require signed
   // thinking blocks; unsigned reasoning echoes are stripped before sending.
   final isClaudeUpstream = upstreamModelId.toLowerCase().contains('claude');

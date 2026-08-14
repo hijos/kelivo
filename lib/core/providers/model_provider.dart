@@ -11,6 +11,7 @@ import '../services/model_override_payload_parser.dart';
 import '../services/custom_request_merger.dart';
 import 'package:Kelivo/secrets/fallback.dart';
 import '../services/api/google_service_account_auth.dart';
+import '../services/api/openai_compatible_url.dart';
 import '../models/model_types.dart';
 
 class ModelRegistry {
@@ -431,13 +432,7 @@ class ProviderManager {
     final client = _Http.clientFor(cfg);
     try {
       if (kind == ProviderKind.openai) {
-        final base = cfg.baseUrl.endsWith('/')
-            ? cfg.baseUrl.substring(0, cfg.baseUrl.length - 1)
-            : cfg.baseUrl;
-        final path = (cfg.useResponseApi == true)
-            ? '/responses'
-            : (cfg.chatPath ?? '/chat/completions');
-        final url = Uri.parse('$base$path');
+        final url = resolveOpenAICompatibleUrl(cfg);
         final ov = _modelOverride(cfg, modelId);
         String upstreamId = modelId;
         try {
