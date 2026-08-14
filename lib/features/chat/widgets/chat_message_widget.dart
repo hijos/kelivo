@@ -782,6 +782,7 @@ class ChatMessageWidget extends StatefulWidget {
   final VoidCallback? onRegenerate;
   final VoidCallback? onResend;
   final VoidCallback? onCopy;
+  final ValueChanged<String>? onQuoteSelection;
   final VoidCallback? onTranslate;
   final VoidCallback? onSpeak;
   final VoidCallback? onMore;
@@ -833,6 +834,7 @@ class ChatMessageWidget extends StatefulWidget {
     this.onRegenerate,
     this.onResend,
     this.onCopy,
+    this.onQuoteSelection,
     this.onTranslate,
     this.onSpeak,
     this.onMore,
@@ -877,6 +879,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
   // User message context menu state
   final GlobalKey _userBubbleKey = GlobalKey();
   OverlayEntry? _userMenuOverlay;
+  String? _selectedQuoteText;
   // Desktop anchored menus for bottom action buttons
   final GlobalKey _moreBtnKey1 = GlobalKey();
   final GlobalKey _moreBtnKey2 = GlobalKey();
@@ -1560,14 +1563,16 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
               if (isDesktop) return; // Desktop uses right-click menu
               _showUserContextMenu();
             },
-            onSecondaryTapDown: (details) {
-              final isDesktop =
-                  defaultTargetPlatform == TargetPlatform.macOS ||
-                  defaultTargetPlatform == TargetPlatform.windows ||
-                  defaultTargetPlatform == TargetPlatform.linux;
-              if (!isDesktop) return; // Mobile keeps long-press
-              _showUserContextMenuAt(details.globalPosition);
-            },
+            onSecondaryTapDown: _canQuoteSelection
+                ? null
+                : (details) {
+                    final isDesktop =
+                        defaultTargetPlatform == TargetPlatform.macOS ||
+                        defaultTargetPlatform == TargetPlatform.windows ||
+                        defaultTargetPlatform == TargetPlatform.linux;
+                    if (!isDesktop) return; // Mobile keeps long-press
+                    _showUserContextMenuAt(details.globalPosition);
+                  },
             behavior: HitTestBehavior.translucent,
             child: Container(
               key: _userBubbleKey,
@@ -1776,6 +1781,51 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     } catch (_) {}
   }
 
+  bool get _canQuoteSelection {
+    final isDesktop =
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
+    return isDesktop &&
+        widget.onQuoteSelection != null &&
+        !widget.message.isStreaming;
+  }
+
+  Widget _buildSelectableMessageText({
+    required Key key,
+    required Widget child,
+  }) {
+    if (!_canQuoteSelection) {
+      return SelectionArea(key: key, child: child);
+    }
+
+    return SelectionArea(
+      key: key,
+      onSelectionChanged: (selection) {
+        _selectedQuoteText = selection?.plainText;
+      },
+      contextMenuBuilder: (context, selectableRegionState) {
+        return AdaptiveTextSelectionToolbar.buttonItems(
+          anchors: selectableRegionState.contextMenuAnchors,
+          buttonItems: <ContextMenuButtonItem>[
+            ContextMenuButtonItem(
+              label: AppLocalizations.of(context)!.chatMessageWidgetQuote,
+              onPressed: () {
+                final selectedText = _selectedQuoteText;
+                if (selectedText == null || selectedText.trim().isEmpty) return;
+                ContextMenuController.removeAny();
+                selectableRegionState.clearSelection();
+                widget.onQuoteSelection?.call(selectedText);
+              },
+            ),
+            ...selectableRegionState.contextMenuButtonItems,
+          ],
+        );
+      },
+      child: child,
+    );
+  }
+
   Widget _buildUserTextContent(
     BuildContext context,
     String visualText,
@@ -1808,7 +1858,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     }
 
     return isDesktop
-        ? SelectionArea(
+        ? _buildSelectableMessageText(
             key: ValueKey('user_${widget.message.id}'),
             child: content,
           )
@@ -2198,7 +2248,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     );
 
     return RepaintBoundary(
-      child: SelectionArea(
+      child: _buildSelectableMessageText(
         key: ValueKey('assistant_${widget.message.id}'),
         child: DefaultTextStyle.merge(
           style: TextStyle(fontSize: baseAssistant, height: 1.5),
@@ -2837,7 +2887,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                           Padding(
                             padding: const EdgeInsets.fromLTRB(8, 2, 8, 6),
                             child: RepaintBoundary(
-                              child: SelectionArea(
+                              child: _buildSelectableMessageText(
                                 key: ValueKey(
                                   'translation_${widget.message.id}',
                                 ),

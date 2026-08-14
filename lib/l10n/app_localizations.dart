@@ -4306,6 +4306,12 @@ abstract class AppLocalizations {
   /// **'Copied to clipboard'**
   String get chatMessageWidgetCopiedToClipboard;
 
+  /// No description provided for @chatMessageWidgetQuote.
+  ///
+  /// In en, this message translates to:
+  /// **'Quote'**
+  String get chatMessageWidgetQuote;
+
   /// No description provided for @chatMessageWidgetResendTooltip.
   ///
   /// In en, this message translates to:
