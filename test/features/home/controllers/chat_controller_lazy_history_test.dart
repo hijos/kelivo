@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:Kelivo/core/database/generation_run.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'package:Kelivo/core/services/chat/chat_service.dart';
@@ -27,6 +28,8 @@ class _FakeLazyChatService extends ChatService {
   bool groupsLoaded = false;
   Completer<void>? groupLoadGate;
   final List<Set<String>> groupLoadRequests = <Set<String>>[];
+  final Map<String, GenerationRun> generationRuns = <String, GenerationRun>{};
+  Set<String> generationRunTargetIds = const <String>{};
 
   @override
   bool isTemporaryConversation(String? id) => temporary;
@@ -273,6 +276,17 @@ class _FakeLazyChatService extends ChatService {
   }
 
   @override
+  Future<Map<String, GenerationRun>> loadLatestGenerationRunsForTargets(
+    Iterable<String> targetRevisionIds,
+  ) async {
+    generationRunTargetIds = targetRevisionIds.toSet();
+    return {
+      for (final id in generationRunTargetIds)
+        if (generationRuns[id] case final run?) id: run,
+    };
+  }
+
+  @override
   Conversation? getConversation(String id) {
     if (deletedConversationIds.contains(id)) return null;
     if (!knownConversationIds.contains(id)) return null;
@@ -312,6 +326,8 @@ ChatMessage _versionedMessage({
   required String role,
   required String groupId,
   required int version,
+  String? providerId,
+  String? modelId,
 }) {
   return ChatMessage(
     id: id,
@@ -320,6 +336,8 @@ ChatMessage _versionedMessage({
     conversationId: 'conversation-1',
     groupId: groupId,
     version: version,
+    providerId: providerId,
+    modelId: modelId,
   );
 }
 
@@ -1892,5 +1910,70 @@ void main() {
         );
       },
     );
+
+    test('multi-model open preloads sibling generation states', () async {
+      final v0 = _versionedMessage(
+        id: 'assistant-v0',
+        role: 'assistant',
+        groupId: 'assistant',
+        version: 0,
+        providerId: 'openai',
+        modelId: 'gpt-5.6',
+      );
+      final v1 = _versionedMessage(
+        id: 'assistant-v1',
+        role: 'assistant',
+        groupId: 'assistant',
+        version: 1,
+        providerId: 'google',
+        modelId: 'gemini-3-pro',
+      );
+      messages = [v0, v1];
+      conversation = Conversation(
+        id: 'conversation-1',
+        title: 'Multi-model',
+        messageIds: messages.map((message) => message.id).toList(),
+      );
+      final timestamp = DateTime.utc(2026, 8, 14);
+      chatService = _FakeLazyChatService(messages)
+        ..versionSelections = const {'assistant': 1}
+        ..generationRuns['assistant-v0'] = GenerationRun(
+          id: 'run-v0',
+          conversationId: conversation.id,
+          targetRevisionId: 'assistant-v0',
+          state: GenerationRunState.completed,
+          stateRevision: 1,
+          checkpointSeq: 1,
+          errorCode: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          terminalAt: timestamp,
+        )
+        ..generationRuns['assistant-v1'] = GenerationRun(
+          id: 'run-v1',
+          conversationId: conversation.id,
+          targetRevisionId: 'assistant-v1',
+          state: GenerationRunState.failed,
+          stateRevision: 1,
+          checkpointSeq: 0,
+          errorCode: 'request_failed',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          terminalAt: timestamp,
+        );
+      controller.dispose();
+      controller = ChatController(chatService: chatService);
+
+      await controller.setCurrentConversationAndLoad(conversation);
+
+      expect(chatService.generationRunTargetIds, {
+        'assistant-v0',
+        'assistant-v1',
+      });
+      expect(controller.generationStatesByMessageId, {
+        'assistant-v0': GenerationRunState.completed,
+        'assistant-v1': GenerationRunState.failed,
+      });
+    });
   });
 }

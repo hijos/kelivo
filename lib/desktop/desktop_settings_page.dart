@@ -12,6 +12,8 @@ import '../theme/app_font_weights.dart';
 import '../theme/palettes.dart';
 import '../core/providers/settings_provider.dart';
 import '../core/services/chat/chat_service.dart';
+import '../core/providers/chat_model_selection_provider.dart';
+import '../core/models/chat_model_target.dart';
 import '../core/providers/model_provider.dart';
 import '../core/services/logging/flutter_logger.dart';
 import '../core/services/model_override_resolver.dart';

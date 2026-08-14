@@ -65,6 +65,86 @@ void main() {
       );
     });
 
+    test('validates persisted multi-model selections', () {
+      final validSelection = jsonEncode({
+        'version': 1,
+        'scope': 'nextMessage',
+        'conversations': {
+          'conversation-a': [
+            {'providerKey': 'openai', 'modelId': 'gpt-5.6'},
+            {'providerKey': 'google', 'modelId': 'gemini-3-pro'},
+          ],
+        },
+      });
+
+      expect(
+        () => BackupSettingsValidator.validate({
+          'chat_model_selections_v1': validSelection,
+        }),
+        returnsNormally,
+      );
+      expect(
+        () => BackupSettingsValidator.validate({
+          'chat_model_selections_v1': jsonEncode({
+            'version': 1,
+            'conversations': {
+              'conversation-a': [
+                {'providerKey': 'openai', 'modelId': 'gpt-5.6'},
+              ],
+            },
+          }),
+        }),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => BackupSettingsValidator.validate({
+          'chat_model_selections_v1': jsonEncode({
+            'version': 1,
+            'conversations': {
+              'conversation-a': [
+                {'providerKey': 'openai', 'modelId': 'gpt-5.6'},
+                {'providerKey': 'openai', 'modelId': 'gpt-5.6'},
+              ],
+            },
+          }),
+        }),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('restore merge remaps imported conversation selection IDs', () {
+      final merged = BackupSettingsValidator.mergeChatModelSelectionsForRestore(
+        existingValue: jsonEncode({
+          'version': 1,
+          'scope': 'conversation',
+          'conversations': {
+            'local': [
+              {'providerKey': 'local-a', 'modelId': 'model-a'},
+              {'providerKey': 'local-b', 'modelId': 'model-b'},
+            ],
+          },
+        }),
+        incomingValue: jsonEncode({
+          'version': 1,
+          'scope': 'nextMessage',
+          'conversations': {
+            'collision': [
+              {'providerKey': 'import-a', 'modelId': 'model-a'},
+              {'providerKey': 'import-b', 'modelId': 'model-b'},
+            ],
+          },
+        }),
+        remappedConversationIds: const {'collision': 'imported-collision'},
+      );
+      final decoded = jsonDecode(merged) as Map<String, dynamic>;
+      final conversations = decoded['conversations'] as Map<String, dynamic>;
+
+      expect(decoded['scope'], 'conversation');
+      expect(conversations, containsPair('local', isA<List>()));
+      expect(conversations, containsPair('imported-collision', isA<List>()));
+      expect(conversations, isNot(contains('collision')));
+    });
+
     test('rejects malformed legacy string lists', () {
       expect(
         () => BackupSettingsValidator.normalizeLegacyStringLists({
