@@ -25,6 +25,7 @@ import 'core/providers/mcp_provider.dart';
 import 'core/providers/tts_provider.dart';
 import 'core/providers/asr_provider.dart';
 import 'core/providers/assistant_provider.dart';
+import 'core/providers/chat_model_selection_provider.dart';
 import 'core/providers/tag_provider.dart';
 import 'core/providers/update_provider.dart';
 import 'core/providers/quick_phrase_provider.dart';
@@ -564,6 +565,31 @@ class MyApp extends StatelessWidget {
             preferences: businessPreferences,
             chatService: ctx.read<ChatService>(),
           ),
+        ),
+        ChangeNotifierProvider(
+          lazy: false,
+          create: (ctx) {
+            final selectionProvider = ChatModelSelectionProvider(
+              preferences: businessPreferences,
+            );
+            ctx.read<ChatService>().setConversationDeletedCallback(
+              selectionProvider.removeConversation,
+            );
+            ctx.read<AssistantProvider>().setAssistantDeletedCallback(
+              selectionProvider.removeAssistant,
+            );
+            ctx.read<SettingsProvider>().setModelSelectionLifecycleCallbacks(
+              onModelsDeleted: (providerKey, modelIds) =>
+                  selectionProvider.pruneTargets(
+                    (target) =>
+                        target.providerKey != providerKey ||
+                        !modelIds.contains(target.modelId),
+                  ),
+              onProviderUnavailable: (providerKey) => selectionProvider
+                  .pruneTargets((target) => target.providerKey != providerKey),
+            );
+            return selectionProvider;
+          },
         ),
         ChangeNotifierProvider(
           create: (_) => TagProvider(preferences: businessPreferences),

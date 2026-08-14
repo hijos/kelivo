@@ -80,6 +80,27 @@ void main() {
     });
 
     test(
+      'single-model deletion notifies selection lifecycle cleanup',
+      () async {
+        final harness = await createBusinessTestHarness(initial: {});
+        final settings = SettingsProvider(harness.preferences);
+        final deleted = <({String providerKey, Set<String> modelIds})>[];
+        settings.setModelSelectionLifecycleCallbacks(
+          onModelsDeleted: (providerKey, modelIds) async {
+            deleted.add((providerKey: providerKey, modelIds: modelIds));
+          },
+        );
+
+        await settings.loaded;
+        await settings.clearSelectionsForModel('TestProvider', 'remove-a');
+
+        expect(deleted, hasLength(1));
+        expect(deleted.single.providerKey, 'TestProvider');
+        expect(deleted.single.modelIds, const <String>{'remove-a'});
+      },
+    );
+
+    test(
       'deleteModels clears orphan overrides when every model is removed',
       () async {
         final harness = await createBusinessTestHarness(initial: {});

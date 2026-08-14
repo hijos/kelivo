@@ -557,4 +557,69 @@ void main() {
     expect(merged, isNot(contains('pinned_chat_ids')));
     expect(merged['theme_mode_v1'], 'light');
   });
+
+  test(
+    'multi-model merge remaps imported conversations and keeps local collisions',
+    () {
+      List<Map<String, String>> targets(String prefix) => [
+        {'providerKey': '$prefix-a', 'modelId': 'model-a'},
+        {'providerKey': '$prefix-b', 'modelId': 'model-b'},
+      ];
+
+      final existing = BusinessSnapshot(
+        entities: const {},
+        preferences: {
+          'chat_model_selections_v1': jsonEncode({
+            'version': 1,
+            'scope': 'assistant',
+            'assistants': {'assistant-local': targets('local-assistant')},
+            'conversations': {'shared': targets('local-conversation')},
+            'nextMessages': {'shared': targets('local-next')},
+          }),
+        },
+      );
+      final incoming = BusinessSnapshot(
+        entities: const {},
+        preferences: {
+          'chat_model_selections_v1': jsonEncode({
+            'version': 1,
+            'scope': 'nextMessage',
+            'assistants': {'assistant-imported': targets('imported-assistant')},
+            'conversations': {
+              'shared': targets('imported-conversation'),
+              'import-only': targets('import-only'),
+            },
+            'nextMessages': {'import-only': targets('import-next')},
+          }),
+        },
+      );
+
+      final merged = BusinessSettingsMerger.mergeSnapshots(
+        existing,
+        incoming,
+        incomingKeys: const {'chat_model_selections_v1'},
+        remappedConversationIds: const {
+          'shared': 'remapped-shared',
+          'import-only': 'remapped-import-only',
+        },
+      );
+      final decoded =
+          jsonDecode(merged.preferences['chat_model_selections_v1']! as String)
+              as Map<String, dynamic>;
+      final conversations = decoded['conversations'] as Map<String, dynamic>;
+      final nextMessages = decoded['nextMessages'] as Map<String, dynamic>;
+
+      expect(decoded['scope'], 'assistant');
+      expect((decoded['assistants'] as Map), contains('assistant-local'));
+      expect((decoded['assistants'] as Map), contains('assistant-imported'));
+      expect(conversations['shared'], targets('local-conversation'));
+      expect(
+        conversations['remapped-shared'],
+        targets('imported-conversation'),
+      );
+      expect(conversations['remapped-import-only'], targets('import-only'));
+      expect(nextMessages['shared'], targets('local-next'));
+      expect(nextMessages['remapped-import-only'], targets('import-next'));
+    },
+  );
 }

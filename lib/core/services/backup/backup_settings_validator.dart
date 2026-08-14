@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../database/business_settings_merger.dart';
 import '../../database/business_settings_router.dart';
 
 /// Pure validation shared by backup preflight and business-data restoration.
@@ -39,6 +40,7 @@ final class BackupSettingsValidator {
     'provider_group_collapsed_v1',
     'assistant_tag_map_v1',
     'assistant_tag_collapsed_v1',
+    'chat_model_selections_v1',
   };
   static const _jsonMapOfMapKeys = {'provider_configs_v1'};
   static const _jsonMapOfStringKeys = {
@@ -121,7 +123,27 @@ final class BackupSettingsValidator {
       _validateJsonShape(key, value, expectList: true);
     } else if (_jsonMapKeys.contains(key)) {
       _validateJsonShape(key, value, expectList: false);
+      if (key == 'chat_model_selections_v1') {
+        _validateChatModelSelections(key, value);
+      }
     }
+  }
+
+  /// Merges the preference-backed multi-model selection index during a backup
+  /// merge. Only incoming conversation IDs are remapped: the database merge
+  /// report describes imported IDs, not local conversation renames.
+  static String mergeChatModelSelectionsForRestore({
+    required String incomingValue,
+    String? existingValue,
+    Map<String, String> remappedConversationIds = const <String, String>{},
+  }) {
+    final encoded = BusinessSettingsMerger.mergeChatModelSelections(
+      incomingValue: incomingValue,
+      existingValue: existingValue,
+      remappedConversationIds: remappedConversationIds,
+    );
+    _validateChatModelSelections('chat_model_selections_v1', encoded);
+    return encoded;
   }
 
   static void _validateJsonShape(
@@ -169,6 +191,60 @@ final class BackupSettingsValidator {
       ];
     } on FormatException {
       throw const FormatException(_asrServicesKey);
+    }
+  }
+
+  static void _validateChatModelSelections(String key, dynamic value) {
+    if (value is! String) throw FormatException(key);
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is! Map) throw FormatException(key);
+      final version = decoded['version'];
+      if (version != null && version != 1) throw FormatException(key);
+      final scope = decoded['scope'];
+      if (scope != null &&
+          scope != 'assistant' &&
+          scope != 'conversation' &&
+          scope != 'nextMessage') {
+        throw FormatException(key);
+      }
+      for (final indexKey in const <String>[
+        'assistants',
+        'conversations',
+        'nextMessages',
+      ]) {
+        final index = decoded[indexKey];
+        if (index == null) continue;
+        if (index is! Map) throw FormatException(key);
+        for (final entry in index.entries) {
+          if (entry.key is! String || (entry.key as String).isEmpty) {
+            throw FormatException(key);
+          }
+          final targets = entry.value;
+          if (targets is! List || targets.length < 2 || targets.length > 5) {
+            throw FormatException(key);
+          }
+          final seen = <String>{};
+          for (final target in targets) {
+            if (target is! Map ||
+                target['providerKey'] is! String ||
+                target['modelId'] is! String) {
+              throw FormatException(key);
+            }
+            final providerKey = (target['providerKey'] as String).trim();
+            final modelId = (target['modelId'] as String).trim();
+            if (providerKey.isEmpty ||
+                modelId.isEmpty ||
+                !seen.add('$providerKey\u0000$modelId')) {
+              throw FormatException(key);
+            }
+          }
+        }
+      }
+    } on FormatException {
+      throw FormatException(key);
+    } on Object {
+      throw FormatException(key);
     }
   }
 }
