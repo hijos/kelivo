@@ -34,6 +34,10 @@ import '../services/memory/memory_trace.dart';
 import '../../theme/palettes.dart';
 import '../../theme/custom_theme.dart';
 
+typedef ModelsDeletedCallback =
+    Future<void> Function(String providerKey, Set<String> modelIds);
+typedef ProviderUnavailableCallback = Future<void> Function(String providerKey);
+
 // Desktop: topic list position
 enum DesktopTopicPosition { left, right }
 
@@ -674,6 +678,42 @@ class SettingsProvider extends ChangeNotifier {
 
   SettingsProvider._withoutLoad(this._preferences)
     : _loaded = Future<void>.value();
+
+  ModelsDeletedCallback? _modelsDeletedCallback;
+  ProviderUnavailableCallback? _providerUnavailableCallback;
+
+  void setModelSelectionLifecycleCallbacks({
+    ModelsDeletedCallback? onModelsDeleted,
+    ProviderUnavailableCallback? onProviderUnavailable,
+  }) {
+    _modelsDeletedCallback = onModelsDeleted;
+    _providerUnavailableCallback = onProviderUnavailable;
+  }
+
+  Future<void> _notifyModelsDeleted(
+    String providerKey,
+    Set<String> modelIds,
+  ) async {
+    final callback = _modelsDeletedCallback;
+    if (callback == null) return;
+    try {
+      await callback(providerKey, Set.unmodifiable(modelIds));
+    } catch (error) {
+      debugPrint('[SettingsProvider] model deletion callback failed: $error');
+    }
+  }
+
+  Future<void> _notifyProviderUnavailable(String providerKey) async {
+    final callback = _providerUnavailableCallback;
+    if (callback == null) return;
+    try {
+      await callback(providerKey);
+    } catch (error) {
+      debugPrint(
+        '[SettingsProvider] provider unavailable callback failed: $error',
+      );
+    }
+  }
 
   final BusinessPreferences _preferences;
   late final Future<void> _loaded;
@@ -2807,8 +2847,13 @@ class SettingsProvider extends ChangeNotifier {
       old.copyWith(models: nextModels, modelOverrides: nextOverrides),
     );
     for (final modelId in deletedModelIds) {
-      await clearSelectionsForModel(providerKey, modelId);
+      await clearSelectionsForModel(
+        providerKey,
+        modelId,
+        notifyModelDeletion: false,
+      );
     }
+    await _notifyModelsDeleted(providerKey, deletedModelIds);
     return deletedCount;
   }
 
@@ -2991,14 +3036,16 @@ class SettingsProvider extends ChangeNotifier {
       changed = true;
     }
     if (changed) notifyListeners();
+    await _notifyProviderUnavailable(providerKey);
   }
 
   /// Clears global model selections that reference a specific model.
   /// Used when a model is deleted from a provider.
   Future<void> clearSelectionsForModel(
     String providerKey,
-    String modelId,
-  ) async {
+    String modelId, {
+    bool notifyModelDeletion = true,
+  }) async {
     final prefs = _preferences;
     bool changed = false;
     if (_currentModelProvider == providerKey && _currentModelId == modelId) {
@@ -3061,6 +3108,9 @@ class SettingsProvider extends ChangeNotifier {
       changed = true;
     }
     if (changed) notifyListeners();
+    if (notifyModelDeletion) {
+      await _notifyModelsDeleted(providerKey, <String>{modelId});
+    }
   }
 
   Future<void> removeProviderConfig(String key) async {
@@ -3129,6 +3179,7 @@ class SettingsProvider extends ChangeNotifier {
     await prefs.setString(_providerConfigsKey, jsonEncode(map));
     await prefs.setStringList(_providersOrderKey, _providersOrder);
     await prefs.setString(_providerGroupMapKey, jsonEncode(_providerGroupMap));
+    await _notifyProviderUnavailable(key);
     notifyListeners();
   }
 

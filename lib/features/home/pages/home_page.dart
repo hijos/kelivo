@@ -15,6 +15,8 @@ import '../../../theme/app_font_weights.dart';
 import '../../../theme/design_tokens.dart';
 import '../../../core/providers/settings_provider.dart';
 import '../../../core/providers/assistant_provider.dart';
+import '../../../core/providers/chat_model_selection_provider.dart';
+import '../../../core/models/chat_model_target.dart';
 import '../../../core/providers/quick_phrase_provider.dart';
 import '../../../core/providers/instruction_injection_provider.dart';
 import '../../../core/providers/world_book_provider.dart';
@@ -384,9 +386,7 @@ class _DialogActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final base = primary
-        ? cs.primary
-        : (context.appColors.surfaceFill);
+    final base = primary ? cs.primary : (context.appColors.surfaceFill);
 
     return IosCardPress(
       baseColor: base,
@@ -604,6 +604,27 @@ class _HomePageState extends State<HomePage>
     final assistant = context.watch<AssistantProvider>().currentAssistant;
 
     final modelInfo = getModelDisplayInfo(settings, assistant: assistant);
+    final selectionProvider = context.watch<ChatModelSelectionProvider?>();
+    final fallbackTarget =
+        modelInfo.providerKey != null && modelInfo.modelId != null
+        ? ChatModelTarget(
+            providerKey: modelInfo.providerKey!,
+            modelId: modelInfo.modelId!,
+          )
+        : null;
+    final activeTargets = fallbackTarget == null
+        ? const <ChatModelTarget>[]
+        : selectionProvider?.effectiveTargets(
+                fallback: fallbackTarget,
+                assistantId: assistant?.id,
+                conversationId: _controller.currentConversation?.id,
+              ) ??
+              <ChatModelTarget>[fallbackTarget];
+    final multiModelActive = activeTargets.length > 1;
+    final providerName = multiModelActive ? null : modelInfo.providerName;
+    final modelDisplay = multiModelActive
+        ? AppLocalizations.of(context)!.multiModelCount(activeTargets.length)
+        : modelInfo.modelDisplay;
 
     final title = _controller.isTemporaryConversation
         ? AppLocalizations.of(context)!.temporaryChatTitle
@@ -615,8 +636,8 @@ class _HomePageState extends State<HomePage>
       return _buildTabletLayout(
         context,
         title: title,
-        providerName: modelInfo.providerName,
-        modelDisplay: modelInfo.modelDisplay,
+        providerName: providerName,
+        modelDisplay: modelDisplay,
         cs: cs,
       );
     }
@@ -624,8 +645,8 @@ class _HomePageState extends State<HomePage>
     return _buildMobileLayout(
       context,
       title: title,
-      providerName: modelInfo.providerName,
-      modelDisplay: modelInfo.modelDisplay,
+      providerName: providerName,
+      modelDisplay: modelDisplay,
       cs: cs,
     );
   }
@@ -671,7 +692,10 @@ class _HomePageState extends State<HomePage>
       canToggleTemporaryConversation:
           _controller.canToggleTemporaryConversation,
       temporaryConversationEnabled: _controller.isTemporaryConversation,
-      onSelectModel: () => showModelSelectSheet(context),
+      onSelectModel: () => showModelSelectSheet(
+        context,
+        conversationId: _controller.currentConversation?.id,
+      ),
       globalSearchMode: _controller.isGlobalSearchMode,
       globalSearchQuery: _controller.globalSearchQuery,
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
@@ -802,7 +826,10 @@ class _HomePageState extends State<HomePage>
       onGlobalSearchQueryChanged: _controller.setGlobalSearchQuery,
       onOpenGlobalSearchResult: (convId, msgId) => _controller
           .openGlobalSearchResult(conversationId: convId, messageId: msgId),
-      onSelectModel: () => showModelSelectSheet(context),
+      onSelectModel: () => showModelSelectSheet(
+        context,
+        conversationId: _controller.currentConversation?.id,
+      ),
       onSidebarWidthChanged: _controller.updateSidebarWidth,
       onSidebarWidthChangeEnd: _controller.saveSidebarWidth,
       onRightSidebarWidthChanged: _controller.updateRightSidebarWidth,
@@ -1198,6 +1225,7 @@ class _HomePageState extends State<HomePage>
       mediaController: _mediaController,
       isTablet: isTablet,
       isLoading: _controller.isCurrentConversationLoading,
+      canStop: _controller.canStopCurrentGeneration,
       isToolModel: _controller.isToolModel,
       isReasoningModel: _controller.isReasoningModel,
       isReasoningEnabled: _controller.isReasoningEnabled,
@@ -1206,7 +1234,10 @@ class _HomePageState extends State<HomePage>
           ? AppLocalizations.of(context)!.messageEditPageSaveAndSend
           : null,
       onMore: _toggleTools,
-      onSelectModel: () => showModelSelectSheet(context),
+      onSelectModel: () => showModelSelectSheet(
+        context,
+        conversationId: _controller.currentConversation?.id,
+      ),
       onLongPressSelectModel: () {
         Navigator.of(
           context,
@@ -1418,9 +1449,9 @@ class _HomePageState extends State<HomePage>
           if (_controller.isDragHovering)
             IgnorePointer(
               child: Container(
-                color: Theme.of(context).colorScheme.scrim.withValues(
-                  alpha: 0.12,
-                ),
+                color: Theme.of(
+                  context,
+                ).colorScheme.scrim.withValues(alpha: 0.12),
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(

@@ -2,6 +2,7 @@ import 'package:Kelivo/core/models/message_part.dart';
 import 'package:Kelivo/core/models/chat_message.dart';
 import 'package:Kelivo/core/models/conversation.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -259,8 +260,7 @@ void main() {
       const conversationId = 'conversation-malformed-backfill';
       const messageIds = ['a-healthy', 'b-malformed', 'c-healthy'];
       final files = <String, File>{
-        for (final id in messageIds)
-          id: File('${tempDir.path}/upload/$id.txt'),
+        for (final id in messageIds) id: File('${tempDir.path}/upload/$id.txt'),
       };
       for (final file in files.values) {
         await file.parent.create(recursive: true);
@@ -369,10 +369,12 @@ void main() {
         expect(malformedRefs, hasLength(1));
         expect(malformedRefs.single['asset_id'], 'legacy-asset-1');
         expect(
-          verify.select(
-            "SELECT revision_id FROM asset_reference_dirty_rows "
-            'ORDER BY revision_id;',
-          ).map((row) => row['revision_id']),
+          verify
+              .select(
+                "SELECT revision_id FROM asset_reference_dirty_rows "
+                'ORDER BY revision_id;',
+              )
+              .map((row) => row['revision_id']),
           ['b-malformed'],
         );
         expect(
@@ -407,20 +409,22 @@ void main() {
       await first.close();
       services.remove(first);
 
-      final databasePath =
-          '${tempDir.path}/${AppDatabase.databaseFileName}';
+      final databasePath = '${tempDir.path}/${AppDatabase.databaseFileName}';
       final corrupt = sqlite.sqlite3.open(databasePath);
       late final String originalAssetId;
       const secret = '/private/attachment-metadata';
-      final malformedPayload =
-          '{"uri":"${upload.path}","name":"live.txt","mime":["$secret"]}';
+      final malformedPayload = jsonEncode({
+        'uri': upload.path,
+        'name': 'live.txt',
+        'mime': [secret],
+      });
       try {
-        originalAssetId = corrupt
-            .select(
-              'SELECT asset_id FROM message_asset_rows WHERE revision_id = ?;',
-              [message.id],
-            )
-            .single['asset_id'] as String;
+        originalAssetId =
+            corrupt.select(
+                  'SELECT asset_id FROM message_asset_rows WHERE revision_id = ?;',
+                  [message.id],
+                ).single['asset_id']
+                as String;
         corrupt.execute(
           'UPDATE message_part_rows SET payload = ? '
           'WHERE revision_id = ? AND kind = ?;',

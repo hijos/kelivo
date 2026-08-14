@@ -2028,6 +2028,9 @@ class DataSync {
           preserveExplicitEmptyInstructionList:
               preserveExplicitEmptyInstructionList,
           entityRowIds: entityRowIds,
+          remappedConversationIds:
+              _lastMergeReport?.remappedConversationIds ??
+              const <String, String>{},
         );
         if (!restoreChats) {
           if (restoreFiles) {
@@ -2082,6 +2085,9 @@ class DataSync {
                 settings,
                 preserveExplicitEmptyInstructionList: true,
                 assumePreV3EmbeddingMigrationWhenVersionMissing: true,
+                remappedConversationIds:
+                    _lastMergeReport?.remappedConversationIds ??
+                    const <String, String>{},
               );
       }
 

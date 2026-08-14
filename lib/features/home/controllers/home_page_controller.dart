@@ -185,9 +185,11 @@ class HomePageController extends ChangeNotifier {
   bool _selecting = false;
   ChatSelectionMode _selectionMode = ChatSelectionMode.share;
   final Set<String> _selectedItems = <String>{};
+
   /// Selectable projection ids from the last full-history selection load.
   /// Null until select-all / toggle-all / invert loads projections.
   Set<String>? _selectableProjectionIds;
+
   /// Bumped when selection starts, cancels, completes, or the conversation
   /// switches so in-flight select-all / toggle / invert results are ignored.
   int _selectionEpoch = 0;
@@ -307,6 +309,9 @@ class HomePageController extends ChangeNotifier {
 
   bool get isCurrentConversationLoading =>
       _viewModel.isCurrentConversationLoading;
+
+  bool get canStopCurrentGeneration =>
+      _chatController.isSelectedAnswerStreaming;
 
   QueuedChatInput? get currentQueuedInput => _viewModel.currentQueuedInput;
 
@@ -525,9 +530,17 @@ class HomePageController extends ChangeNotifier {
   }
 
   String _localizeGenerationError(AppLocalizations l10n, String error) {
+    const incompatiblePrefix = 'multi_model_attachment_unsupported:';
+    if (error.startsWith(incompatiblePrefix)) {
+      return l10n.multiModelAttachmentUnsupported(
+        error.substring(incompatiblePrefix.length),
+      );
+    }
     switch (error) {
       case 'audio_attachment_unsupported':
         return l10n.homePageAudioAttachmentUnsupported;
+      case 'selected_model_answer_unavailable':
+        return l10n.multiModelSelectedAnswerUnavailable;
       default:
         return '${l10n.generationInterrupted}: $error';
     }
@@ -633,7 +646,9 @@ class HomePageController extends ChangeNotifier {
           }
           break;
         case ChatAction.switchModel:
-          unawaited(showModelSelectSheet(ctx));
+          unawaited(
+            showModelSelectSheet(ctx, conversationId: currentConversation?.id),
+          );
           break;
         case ChatAction.enterGlobalSearch:
           enterGlobalSearchMode(preserveQuery: true);
@@ -1605,8 +1620,7 @@ class HomePageController extends ChangeNotifier {
   bool get allSelectableMessagesSelected {
     final cached = _selectableProjectionIds;
     if (cached != null) {
-      return cached.isNotEmpty &&
-          cached.every(_selectedItems.contains);
+      return cached.isNotEmpty && cached.every(_selectedItems.contains);
     }
     final selectable = _chatController
         .allCollapsedMessagesForCurrentConversation()
@@ -1654,8 +1668,8 @@ class HomePageController extends ChangeNotifier {
 
   Set<String> _selectedSelectionGroupIds() {
     if (_selectedItems.isEmpty) return const <String>{};
-    final windowMessages =
-        _chatController.allCollapsedMessagesForCurrentConversation();
+    final windowMessages = _chatController
+        .allCollapsedMessagesForCurrentConversation();
     final windowIds = {for (final message in windowMessages) message.id};
     // Out-of-window selections are unknown for versioning — surface a
     // synthetic group key so callers treat them as potentially multi-version.
