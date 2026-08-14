@@ -121,6 +121,7 @@ class MessageListView extends StatefulWidget {
     this.onShareMessage,
     this.onSelectMessages,
     this.onSpeakMessage,
+    this.onQuoteSelection,
     this.suggestions = const <String>[],
     this.onSuggestionTap,
     this.onRecoveredAskUserAnswer,
@@ -198,6 +199,7 @@ class MessageListView extends StatefulWidget {
   final OnShareMessage? onShareMessage;
   final OnSelectMessages? onSelectMessages;
   final OnSpeakMessage? onSpeakMessage;
+  final ValueChanged<String>? onQuoteSelection;
   final List<String> suggestions;
   final OnSuggestionTap? onSuggestionTap;
   final OnRecoveredAskUserAnswer? onRecoveredAskUserAnswer;
@@ -1184,6 +1186,9 @@ class _MessageListViewState extends State<MessageListView> {
           : null,
       onTranslate: message.role == 'assistant'
           ? () => widget.onTranslateMessage?.call(message)
+          : null,
+      onQuoteSelection: (message.role == 'assistant' || message.role == 'user')
+          ? widget.onQuoteSelection
           : null,
       onSpeak: message.role == 'assistant'
           ? () => widget.onSpeakMessage?.call(message)

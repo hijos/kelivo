@@ -384,9 +384,7 @@ class _DialogActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final base = primary
-        ? cs.primary
-        : (context.appColors.surfaceFill);
+    final base = primary ? cs.primary : (context.appColors.surfaceFill);
 
     return IosCardPress(
       baseColor: base,
@@ -1171,6 +1169,11 @@ class _HomePageState extends State<HomePage>
               mode: ChatSelectionMode.delete,
             ),
         onSpeakMessage: (message) => _controller.speakMessage(message),
+        onQuoteSelection:
+            _controller.isUserMessageEditActive ||
+                _controller.currentQueuedInput != null
+            ? null
+            : _controller.insertQuotedSelection,
         onSuggestionTap: (suggestion) => _controller.sendSuggestion(suggestion),
         onRecoveredAskUserAnswer: (message, part, result) =>
             _controller.submitRecoveredAskUserAnswer(message, part, result),
@@ -1418,9 +1421,9 @@ class _HomePageState extends State<HomePage>
           if (_controller.isDragHovering)
             IgnorePointer(
               child: Container(
-                color: Theme.of(context).colorScheme.scrim.withValues(
-                  alpha: 0.12,
-                ),
+                color: Theme.of(
+                  context,
+                ).colorScheme.scrim.withValues(alpha: 0.12),
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(

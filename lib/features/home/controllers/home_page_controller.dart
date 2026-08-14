@@ -42,6 +42,7 @@ import '../services/ocr_service.dart';
 import '../services/translation_service.dart';
 import '../services/file_upload_service.dart';
 import '../widgets/chat_input_bar.dart';
+import '../utils/quoted_selection_formatter.dart';
 import '../../model/widgets/model_select_sheet.dart';
 
 enum ChatSelectionMode { share, delete }
@@ -185,9 +186,11 @@ class HomePageController extends ChangeNotifier {
   bool _selecting = false;
   ChatSelectionMode _selectionMode = ChatSelectionMode.share;
   final Set<String> _selectedItems = <String>{};
+
   /// Selectable projection ids from the last full-history selection load.
   /// Null until select-all / toggle-all / invert loads projections.
   Set<String>? _selectableProjectionIds;
+
   /// Bumped when selection starts, cancels, completes, or the conversation
   /// switches so in-flight select-all / toggle / invert results are ignored.
   int _selectionEpoch = 0;
@@ -850,6 +853,21 @@ class HomePageController extends ChangeNotifier {
       return;
     }
     await sendMessage(ChatInputData(text: text));
+  }
+
+  void insertQuotedSelection(String selectedText) {
+    if (_userMessageEditState != null || currentQueuedInput != null) return;
+    final current = _inputController.value;
+    final next = insertQuotedSelectionIntoDraft(current, selectedText);
+    if (next == current) return;
+
+    _inputController.value = next;
+    notifyListeners();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_context.mounted) return;
+      forceScrollToBottomSoon(animate: false);
+      _inputFocus.requestFocus();
+    });
   }
 
   void _replaceInputWithSuggestion(String text) {
@@ -1605,8 +1623,7 @@ class HomePageController extends ChangeNotifier {
   bool get allSelectableMessagesSelected {
     final cached = _selectableProjectionIds;
     if (cached != null) {
-      return cached.isNotEmpty &&
-          cached.every(_selectedItems.contains);
+      return cached.isNotEmpty && cached.every(_selectedItems.contains);
     }
     final selectable = _chatController
         .allCollapsedMessagesForCurrentConversation()
@@ -1654,8 +1671,8 @@ class HomePageController extends ChangeNotifier {
 
   Set<String> _selectedSelectionGroupIds() {
     if (_selectedItems.isEmpty) return const <String>{};
-    final windowMessages =
-        _chatController.allCollapsedMessagesForCurrentConversation();
+    final windowMessages = _chatController
+        .allCollapsedMessagesForCurrentConversation();
     final windowIds = {for (final message in windowMessages) message.id};
     // Out-of-window selections are unknown for versioning — surface a
     // synthetic group key so callers treat them as potentially multi-version.
