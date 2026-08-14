@@ -21,6 +21,7 @@ import '../../tool_result_content.dart';
 import '../../generation/tool_loop_runner.dart';
 import '../../kimi_formula_search.dart';
 import '../../reasoning/reasoning_dialects.dart';
+import '../../openai_compatible_url.dart';
 import '../../stream/sse_framing.dart';
 import '../../stream/stream_chunk.dart';
 import '../../stream/stream_chunk_emit.dart';
@@ -31,26 +32,6 @@ import 'openai_request_shaping.dart';
 import 'responses_api.dart';
 import 'responses_decoder.dart';
 import 'responses_history.dart';
-
-Uri _openAICompatibleUrl(ProviderConfig config) {
-  final rawBase = config.baseUrl.endsWith('/')
-      ? config.baseUrl.substring(0, config.baseUrl.length - 1)
-      : config.baseUrl;
-  final baseUri = Uri.parse(rawBase);
-  if (config.useResponseApi == true) {
-    final normalizedPath = baseUri.path.replaceAll(RegExp(r'/$'), '');
-    if (BuiltInToolsHelper.isDashScopeProvider(config) &&
-        normalizedPath != '/api/v2/apps/protocols/compatible-mode/v1') {
-      return Uri.parse(
-        '${baseUri.scheme}://${baseUri.authority}'
-        '/api/v2/apps/protocols/compatible-mode/v1/responses',
-      );
-    }
-    return Uri.parse('$rawBase/responses');
-  }
-  final path = config.chatPath ?? '/chat/completions';
-  return Uri.parse('$rawBase$path');
-}
 
 /// Accumulates streamed `reasoning_details` entries.
 ///
@@ -138,7 +119,7 @@ Stream<StreamChunk> sendOpenAIStream(
           modelId,
         ).where((name) => name == BuiltInToolNames.search)
       : null;
-  final url = _openAICompatibleUrl(config);
+  final url = resolveOpenAICompatibleUrl(config);
 
   final spec = ModelSpecResolver.instance.spec(config, modelId);
   final wantsImageOutput = spec.output.contains(Modality.image);
