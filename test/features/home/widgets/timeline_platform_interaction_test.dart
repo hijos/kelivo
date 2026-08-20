@@ -1,5 +1,6 @@
 import 'package:Kelivo/features/home/widgets/message_list_view.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,27 +26,39 @@ void main() {
       addTearDown(listController.dispose);
       final processing = ValueNotifier(false);
       addTearDown(processing.dispose);
+      final unrelatedFocus = FocusNode();
+      addTearDown(unrelatedFocus.dispose);
       var userScrollIntentCount = 0;
 
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: MessageListView(
-              scrollController: scrollController,
-              listController: listController,
-              messages: const [],
-              byGroup: const {},
-              versionSelections: const {},
-              reasoning: const {},
-              reasoningSegments: const {},
-              contentSplits: const {},
-              toolParts: const {},
-              translations: const {},
-              selecting: false,
-              selectedItems: const {},
-              dividerPadding: EdgeInsets.zero,
-              isProcessingFiles: processing,
-              onUserScrollIntent: () => userScrollIntentCount++,
+            body: Column(
+              children: [
+                Focus(
+                  focusNode: unrelatedFocus,
+                  child: const SizedBox(width: 1, height: 1),
+                ),
+                Expanded(
+                  child: MessageListView(
+                    scrollController: scrollController,
+                    listController: listController,
+                    messages: const [],
+                    byGroup: const {},
+                    versionSelections: const {},
+                    reasoning: const {},
+                    reasoningSegments: const {},
+                    contentSplits: const {},
+                    toolParts: const {},
+                    translations: const {},
+                    selecting: false,
+                    selectedItems: const {},
+                    dividerPadding: EdgeInsets.zero,
+                    isProcessingFiles: processing,
+                    onUserScrollIntent: () => userScrollIntentCount++,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -65,6 +78,19 @@ void main() {
       expect(find.byType(Scrollbar), desktop ? findsOneWidget : findsNothing);
 
       if (desktop) {
+        unrelatedFocus.requestFocus();
+        await tester.pump();
+        final secondaryClick = await tester.startGesture(
+          tester.getCenter(find.byType(SuperListView)),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        addTearDown(secondaryClick.removePointer);
+        await tester.pump();
+        expect(unrelatedFocus.hasFocus, isTrue);
+        await secondaryClick.up();
+        await tester.pump();
+
         await tester.tap(find.byType(SuperListView));
         await tester.sendKeyDownEvent(LogicalKeyboardKey.pageUp);
         await tester.sendKeyUpEvent(LogicalKeyboardKey.pageUp);

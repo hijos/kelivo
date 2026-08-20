@@ -6,7 +6,9 @@ import 'package:Kelivo/core/providers/user_provider.dart';
 import 'package:Kelivo/features/chat/widgets/chat_message_widget.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,7 +48,45 @@ void main() {
         expect(areaFinder, findsOneWidget);
         final area = tester.widget<SelectionArea>(areaFinder);
         final areaState = tester.state<SelectionAreaState>(areaFinder);
-        areaState.selectableRegion.selectAll();
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find
+              .descendant(of: areaFinder, matching: find.byType(RichText))
+              .first,
+        );
+        Offset textPosition(int offset) {
+          final caretOffset = paragraph.getOffsetForCaret(
+            TextPosition(offset: offset),
+            Rect.zero,
+          );
+          return paragraph.localToGlobal(
+            caretOffset + Offset(0, paragraph.preferredLineHeight / 2),
+          );
+        }
+
+        final primaryDrag = await tester.startGesture(
+          textPosition(0),
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(primaryDrag.removePointer);
+        await tester.pump();
+        await primaryDrag.moveTo(textPosition(message.content.length));
+        await tester.pump();
+        await primaryDrag.up();
+        await tester.pump();
+
+        final selectedGlyphBox = paragraph
+            .getBoxesForSelection(
+              const TextSelection(baseOffset: 0, extentOffset: 1),
+            )
+            .single;
+        final secondaryClick = await tester.startGesture(
+          paragraph.localToGlobal(selectedGlyphBox.toRect().center),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        addTearDown(secondaryClick.removePointer);
+        await tester.pump();
+        await secondaryClick.up();
         await tester.pump();
 
         final toolbar = area.contextMenuBuilder!(
