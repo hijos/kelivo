@@ -301,6 +301,9 @@ class HomeViewModel extends ChangeNotifier {
   /// Completes once downstream work has taken over background execution.
   FutureOr<void> Function(ChatMessage message)? onAssistantMessageFinished;
 
+  /// Called after a durable message mutation changes the conversation outline.
+  VoidCallback? onMessagesChanged;
+
   /// Called to schedule inline image sanitization.
   void Function(String messageId, String content, {bool immediate})?
   onScheduleImageSanitize;
@@ -366,6 +369,7 @@ class HomeViewModel extends ChangeNotifier {
 
   void _onMessagesChanged() {
     _chatController.invalidateCache();
+    onMessagesChanged?.call();
     notifyListeners();
   }
 

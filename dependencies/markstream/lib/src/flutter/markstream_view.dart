@@ -45,8 +45,10 @@ class MarkstreamView extends StatefulWidget {
     this.selectionController,
     this.highlightRanges = const [],
     this.highlightColor,
+    this.headingKeyBuilder,
   }) : assert((source == null) != (document == null));
 
+  final Key? Function(HeadingNode)? headingKeyBuilder;
   final String? source;
   final DocumentNode? document;
   final ParserOptions options;
@@ -238,6 +240,7 @@ class _MarkstreamViewState extends State<MarkstreamView> {
       widget.codeOptions,
       widget.detailsExpansionState,
       widget.detailsStateKey,
+      widget.headingKeyBuilder,
       widget.labels,
       widget.exporting,
       widget.cullToViewport,
@@ -262,6 +265,7 @@ class _MarkstreamViewState extends State<MarkstreamView> {
       codeOptions: widget.codeOptions,
       detailsExpansionState: widget.detailsExpansionState,
       detailsStateKey: widget.detailsStateKey ?? _localDetailsStateKey,
+      headingKeyBuilder: widget.headingKeyBuilder,
       labels: widget.labels,
       exporting: widget.exporting,
       trackSelection: _binding != null,

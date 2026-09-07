@@ -58,6 +58,7 @@ import '../controllers/quote_editing_controller.dart' show buildQuoteTextSpan;
 import 'quote_chip.dart';
 import 'quote_source_highlight.dart';
 import 'package:Kelivo/shared/widgets/app_selection_area.dart';
+import '../../../shared/widgets/markdown_heading_outline.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../shared/widgets/audio_clip_player.dart';
 import '../../../core/utils/multimodal_input_utils.dart';
@@ -1300,6 +1301,7 @@ class ChatMessageWidget extends StatefulWidget {
   final bool isProcessingFiles;
   final RetryStatus? retryStatus;
   final bool enableStreamingTextMotion;
+  final MarkdownHeadingRegistry? headingRegistry;
   final List<String> suggestions;
   final ValueChanged<String>? onSuggestionTap;
   final Future<void> Function(ToolUIPart part, AskUserResult result)?
@@ -1357,6 +1359,7 @@ class ChatMessageWidget extends StatefulWidget {
     this.isProcessingFiles = false,
     this.retryStatus,
     this.enableStreamingTextMotion = true,
+    this.headingRegistry,
     this.suggestions = const <String>[],
     this.onSuggestionTap,
     this.onRecoveredAskUserAnswer,
@@ -2828,6 +2831,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     Object? detailsStateKey,
     UiTextSlice? uiSource,
     SourceTextMap? sourceMap,
+    required String headingScopeId,
+    required int headingScopeOrder,
   }) {
     final bool isDesktop =
         defaultTargetPlatform == TargetPlatform.macOS ||
@@ -2860,6 +2865,11 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         baseStyle: TextStyle(fontSize: baseAssistant, height: 1.5),
         streaming: widget.message.isStreaming,
         conversationId: widget.message.conversationId,
+        headingRegistry: widget.message.isStreaming
+            ? null
+            : widget.headingRegistry,
+        headingScopeId: widget.message.isStreaming ? null : headingScopeId,
+        headingScopeOrder: headingScopeOrder,
       );
     } else {
       assistantContent = Text.rich(
@@ -2956,6 +2966,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     required String blockKey,
     UiTextSlice? uiSource,
     SourceTextMap? sourceMap,
+    required int blockOrder,
   }) {
     final split = context.select<SettingsProvider, bool>(
       (s) => s.assistantBubbleSplitParagraphs,
@@ -2986,6 +2997,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
               : uiSource == null
               ? parts[i].sourceMap.through(sourceMap)
               : sourceMap.slice(parts[i].span.start, parts[i].span.end),
+          headingScopeId: '${widget.message.id}:$blockKey.$i',
+          headingScopeOrder: blockOrder * 1000 + i,
         ),
     ];
   }
@@ -2999,6 +3012,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     Object? detailsStateKey,
     UiTextSlice? uiSource,
     SourceTextMap? sourceMap,
+    required String headingScopeId,
+    required int headingScopeOrder,
   }) {
     return _assistantBlockWidth(
       context,
@@ -3013,6 +3028,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
           detailsStateKey: detailsStateKey,
           uiSource: uiSource,
           sourceMap: sourceMap,
+          headingScopeId: headingScopeId,
+          headingScopeOrder: headingScopeOrder,
         ),
       ),
     );
@@ -3435,6 +3452,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                       enableAssistantMarkdown,
                       citationIndexResolver,
                       blockKey: 'body',
+                      blockOrder: 0,
                     ),
                   ),
                   if (widget.message.isStreaming && visualContent.isNotEmpty)
@@ -3519,6 +3537,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                             enableAssistantMarkdown,
                             citationIndexResolver,
                             blockKey: 'text$index',
+                            blockOrder: index,
                             uiSource: block.uiSource,
                             sourceMap: block.sourceMap,
                           ),

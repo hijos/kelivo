@@ -1,3 +1,4 @@
+import '../widgets/markdown_heading_outline.dart';
 import 'package:Kelivo/features/intelligent_ui/host/ui_host_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:markstream/markstream.dart';
@@ -28,7 +29,13 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
     this.highlightColor,
     this.uiHost,
     this.detailsStateKey,
+    this.headingRegistry,
+    this.headingScopeId,
+    this.headingScopeOrder = 0,
   });
+  final MarkdownHeadingRegistry? headingRegistry;
+  final String? headingScopeId;
+  final int headingScopeOrder;
   final String text;
   final UiHostBinding? uiHost;
 
@@ -62,9 +69,23 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   @override
   void didUpdateWidget(MarkdownWithCodeHighlight oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.headingRegistry != widget.headingRegistry ||
+        oldWidget.headingScopeId != widget.headingScopeId) {
+      if (oldWidget.headingScopeId case final scope?) {
+        oldWidget.headingRegistry?.removeScope(scope);
+      }
+    }
     if (oldWidget.text != widget.text) {
       _source = UnicodeSanitizer.sanitize(widget.text);
     }
+  }
+
+  @override
+  void dispose() {
+    if (widget.headingScopeId case final scope?) {
+      widget.headingRegistry?.removeScope(scope);
+    }
+    super.dispose();
   }
 
   @override
@@ -72,7 +93,27 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     final settings = context.watch<SettingsProvider>();
     final exporting = ExportCaptureScope.of(context);
     final theme = mapMarkdownTheme(context, settings, widget.baseStyle);
+    final headingKeys = <int, GlobalKey>{};
+    final registry = widget.headingRegistry;
+    final scope = widget.headingScopeId;
+    if (registry != null && scope != null) {
+      final candidates = extractMarkdownHeadingCandidates(_source);
+      final anchors = registry.replaceScope(scope, widget.headingScopeOrder, [
+        for (final candidate in candidates)
+          MarkdownHeadingSpec(
+            id: '$scope:${candidate.offset}',
+            level: candidate.level,
+            title: candidate.title,
+          ),
+      ]);
+      for (var i = 0; i < candidates.length; i++) {
+        headingKeys[candidates[i].offset] = anchors[i].anchorKey;
+      }
+    }
     final view = MarkstreamView(
+      headingKeyBuilder: headingKeys.isEmpty
+          ? null
+          : (node) => headingKeys[node.span.start],
       source: _source,
       highlightRanges: widget.highlightRanges,
       highlightColor: widget.highlightColor,

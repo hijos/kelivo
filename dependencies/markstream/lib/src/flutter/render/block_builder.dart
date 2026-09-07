@@ -29,6 +29,7 @@ part 'html_block_builder.dart';
 class MarkstreamRenderer {
   MarkstreamRenderer(this.recognizerFor);
   final LinkRecognizerBuilder recognizerFor;
+  Key? Function(HeadingNode)? headingKeyBuilder;
   late DocumentNode document;
   late MarkstreamTheme theme;
   late MarkstreamExtensions extensions;
@@ -48,6 +49,7 @@ class MarkstreamRenderer {
 
   void update({
     required DocumentNode document,
+    Key? Function(HeadingNode)? headingKeyBuilder,
     required MarkstreamTheme theme,
     required MarkstreamExtensions extensions,
     CodeHighlighter? codeHighlighter,
@@ -63,6 +65,7 @@ class MarkstreamRenderer {
     SourceHighlights highlights = SourceHighlights.empty,
   }) {
     this.document = document;
+    this.headingKeyBuilder = headingKeyBuilder;
     this.theme = theme;
     this.extensions = extensions;
     this.codeHighlighter = codeHighlighter;
@@ -102,6 +105,7 @@ class MarkstreamRenderer {
 
   void _updateBlockContent() => _blockContentRenderer?.update(
     document: document,
+    headingKeyBuilder: headingKeyBuilder,
     theme: theme.blockContentTheme,
     extensions: extensions,
     codeHighlighter: codeHighlighter,
@@ -352,6 +356,7 @@ class MarkstreamRenderer {
       );
     if (node is HeadingNode)
       return Padding(
+        key: headingKeyBuilder?.call(node),
         padding: theme.headingPadding,
         child: Semantics(
           header: true,
