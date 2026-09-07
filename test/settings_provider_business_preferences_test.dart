@@ -55,6 +55,9 @@ void main() {
       expect(settings.learningModeEnabled, isTrue);
       expect(settings.learningModePrompt, 'Learn from the database');
       expect(settings.chatFontScale, 1.2);
+      expect(settings.chatOutlineMaxHeightRatio, 0.4);
+      expect(settings.chatOutlineLeftWidth, 300);
+      expect(settings.chatOutlineRightWidth, 300);
     },
   );
 
@@ -144,6 +147,9 @@ void main() {
       await settings.setLearningModeEnabled(false);
       await settings.setLearningModePrompt('Updated prompt');
       await settings.setChatFontScale(1.35);
+      await settings.setChatOutlineMaxHeightRatio(0.65);
+      await settings.setChatOutlineLeftWidth(420);
+      await settings.setChatOutlineRightWidth(500);
 
       final reloaded = SettingsProvider(BusinessPreferences(repository));
       await reloaded.loaded;
@@ -154,12 +160,34 @@ void main() {
       expect(reloaded.learningModeEnabled, isFalse);
       expect(reloaded.learningModePrompt, 'Updated prompt');
       expect(reloaded.chatFontScale, 1.35);
+      expect(reloaded.chatOutlineMaxHeightRatio, 0.65);
+      expect(reloaded.chatOutlineLeftWidth, 420);
+      expect(reloaded.chatOutlineRightWidth, 500);
 
       final localPreferences = await SharedPreferences.getInstance();
       expect(localPreferences.getDouble('display_chat_font_scale_v1'), 1.35);
+      expect(
+        localPreferences.getDouble('display_chat_outline_max_height_ratio_v1'),
+        0.65,
+      );
       expect(localPreferences.getString('theme_mode_v1'), 'light');
     },
   );
+
+  test('outline widths clamp independently and survive copying', () async {
+    final settings = SettingsProvider(BusinessPreferences(repository));
+    await settings.loaded;
+    await settings.setChatOutlineLeftWidth(20);
+    await settings.setChatOutlineRightWidth(900);
+    expect(settings.chatOutlineLeftWidth, 180);
+    expect(settings.chatOutlineRightWidth, 600);
+    final copy = settings.copyWith();
+    expect(copy.chatOutlineLeftWidth, 180);
+    expect(copy.chatOutlineRightWidth, 600);
+    await settings.setChatOutlineLeftWidth(double.nan);
+    expect(settings.chatOutlineLeftWidth, 300);
+    expect(settings.chatOutlineRightWidth, 600);
+  });
 
   test(
     'copyWith keeps the in-memory snapshot without starting another load',

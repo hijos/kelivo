@@ -946,6 +946,14 @@ class ChatScrollController {
     } catch (_) {}
   }
 
+  /// Cancels any older navigation and yields bottom auto-follow to an outline
+  /// jump. The caller may then drive either indexed or intra-message scrolling.
+  void beginOutlineNavigation() {
+    _cancelProgrammaticNavigation(stopDrivenScroll: true);
+    _autoStickToBottom = false;
+    _lastJumpUserMessageId = null;
+  }
+
   Future<void> _animateToMessageIndex({
     required int index,
     required double alignment,
