@@ -161,6 +161,12 @@ class _DisplaySettingsBody extends StatelessWidget {
                   _RowDivider(),
                   _AutoScrollDelayRow(),
                   _RowDivider(),
+                  _ChatOutlineMaxHeightRow(),
+                  _RowDivider(),
+                  _ChatOutlineWidthRow(isLeft: true),
+                  _RowDivider(),
+                  _ChatOutlineWidthRow(isLeft: false),
+                  _RowDivider(),
                   _BackgroundMaskRow(),
                   _RowDivider(),
                   _ChatInputBackgroundOpacityRow(),
@@ -3330,6 +3336,150 @@ class _BackgroundMaskRow extends StatefulWidget {
   const _BackgroundMaskRow();
   @override
   State<_BackgroundMaskRow> createState() => _BackgroundMaskRowState();
+}
+
+class _ChatOutlineMaxHeightRow extends StatefulWidget {
+  const _ChatOutlineMaxHeightRow();
+
+  @override
+  State<_ChatOutlineMaxHeightRow> createState() =>
+      _ChatOutlineMaxHeightRowState();
+}
+
+class _ChatOutlineMaxHeightRowState extends State<_ChatOutlineMaxHeightRow> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    final ratio = context.read<SettingsProvider>().chatOutlineMaxHeightRatio;
+    _controller = TextEditingController(text: '${(ratio * 100).round()}');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit(String text) {
+    final percentage = double.tryParse(text.trim());
+    if (percentage == null) return;
+    final ratio = (percentage / 100).clamp(0.1, 1.0);
+    context.read<SettingsProvider>().setChatOutlineMaxHeightRatio(ratio);
+    _controller.text = '${(ratio * 100).round()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return _LabeledRow(
+      label: l10n.displaySettingsPageChatOutlineMaxHeightTitle,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IntrinsicWidth(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 36, maxWidth: 72),
+              child: _BorderInput(
+                controller: _controller,
+                onSubmitted: _commit,
+                onFocusLost: _commit,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '%',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 14,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatOutlineWidthRow extends StatefulWidget {
+  const _ChatOutlineWidthRow({required this.isLeft});
+
+  final bool isLeft;
+
+  @override
+  State<_ChatOutlineWidthRow> createState() => _ChatOutlineWidthRowState();
+}
+
+class _ChatOutlineWidthRowState extends State<_ChatOutlineWidthRow> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = context.read<SettingsProvider>();
+    final width = widget.isLeft
+        ? settings.chatOutlineLeftWidth
+        : settings.chatOutlineRightWidth;
+    _controller = TextEditingController(text: '${width.round()}');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit(String text) {
+    final width = double.tryParse(text.trim());
+    final settings = context.read<SettingsProvider>();
+    if (width != null && width.isFinite) {
+      if (widget.isLeft) {
+        settings.setChatOutlineLeftWidth(width);
+      } else {
+        settings.setChatOutlineRightWidth(width);
+      }
+    }
+    _controller.text =
+        '${(widget.isLeft ? settings.chatOutlineLeftWidth : settings.chatOutlineRightWidth).round()}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return _LabeledRow(
+      label: widget.isLeft
+          ? l10n.displaySettingsPageChatOutlineLeftWidthTitle
+          : l10n.displaySettingsPageChatOutlineRightWidthTitle,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 64,
+            child: _BorderInput(
+              controller: _controller,
+              onSubmitted: _commit,
+              onFocusLost: _commit,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'px',
+            style: TextStyle(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 14,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _BackgroundMaskRowState extends State<_BackgroundMaskRow> {

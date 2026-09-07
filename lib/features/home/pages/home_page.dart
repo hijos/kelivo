@@ -703,6 +703,10 @@ class _HomePageState extends State<HomePage>
   bool _scrollNavHovering = false;
   double _lastViewInsetBottom = 0;
   StreamSubscription<String>? _processTextSub;
+  List<ChatMessage> _conversationOutlineMessages = const <ChatMessage>[];
+  String? _conversationOutlineConversationId;
+  int _conversationOutlineRequest = 0;
+  int _observedConversationOutlineRevision = -1;
 
   // ============================================================================
   // Page Controller (manages all business logic and state)
@@ -808,7 +812,66 @@ class _HomePageState extends State<HomePage>
       _controller.replaceScrollController(replacement);
       WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
     }
+    if (Platform.isWindows) {
+      final revision = _controller.conversationOutlineRevision;
+      if (conversationId != _conversationOutlineConversationId) {
+        _conversationOutlineConversationId = conversationId;
+        _conversationOutlineMessages = const <ChatMessage>[];
+        _observedConversationOutlineRevision = revision;
+        _conversationOutlineRequest++;
+        if (conversationId != null) {
+          unawaited(_refreshConversationOutline(conversationId));
+        }
+      } else if (conversationId != null &&
+          revision != _observedConversationOutlineRevision) {
+        _observedConversationOutlineRevision = revision;
+        unawaited(_refreshConversationOutline(conversationId));
+      }
+    }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshConversationOutline(String conversationId) async {
+    final request = ++_conversationOutlineRequest;
+    try {
+      final messages = await _controller
+          .loadAllCollapsedMessagesForCurrentConversation();
+      if (!mounted ||
+          request != _conversationOutlineRequest ||
+          _controller.currentConversation?.id != conversationId) {
+        return;
+      }
+      setState(() => _conversationOutlineMessages = messages);
+    } catch (_) {
+      // The live loaded window remains usable; the next durable mutation will
+      // retry the full projection without disrupting the chat UI.
+    }
+  }
+
+  List<ChatMessage> _mergedConversationOutlineMessages() {
+    final loaded = _controller.chatController.collapsedMessages
+        .where(
+          (message) => message.role == 'user' || message.role == 'assistant',
+        )
+        .toList(growable: false);
+    if (_conversationOutlineMessages.isEmpty) return loaded;
+
+    final loadedBySlot = <String, ChatMessage>{
+      for (final message in loaded) message.groupId ?? message.id: message,
+    };
+    final includedSlots = <String>{};
+    final merged = <ChatMessage>[];
+    for (final projection in _conversationOutlineMessages) {
+      if (projection.role != 'user' && projection.role != 'assistant') continue;
+      final slot = projection.groupId ?? projection.id;
+      merged.add(loadedBySlot[slot] ?? projection);
+      includedSlots.add(slot);
+    }
+    for (final message in loaded) {
+      final slot = message.groupId ?? message.id;
+      if (includedSlots.add(slot)) merged.add(message);
+    }
+    return merged;
   }
 
   void _onDrawerValueChanged() {
@@ -1321,8 +1384,11 @@ class _HomePageState extends State<HomePage>
       onLoadMoreBefore: _controller.loadMoreBefore,
       hasMoreAfter: _controller.chatController.hasMoreAfter,
       onLoadMoreAfter: _controller.loadMoreAfter,
-      onUserScrollIntent: _controller.scrollCtrl.handleUserScrollIntent,
+      onUserScrollIntent: _controller.handleMessageListUserScrollIntent,
       chatFontScale: settings.chatFontScale,
+      chatOutlineMaxHeightRatio: settings.chatOutlineMaxHeightRatio,
+      chatOutlineLeftWidth: settings.chatOutlineLeftWidth,
+      chatOutlineRightWidth: settings.chatOutlineRightWidth,
       collapseThinking: settings.autoCollapseThinking,
       collapseThinkingSteps: settings.collapseThinkingSteps,
       showThinkingCards: settings.showThinkingCards,
@@ -1342,6 +1408,9 @@ class _HomePageState extends State<HomePage>
       showUserAvatar: settings.showUserAvatar,
       showTokenStats: settings.showTokenStats,
       assistant: assistant,
+      conversationOutlineMessages: _mergedConversationOutlineMessages(),
+      onOutlineMessageTap: _controller.scrollToOutlineMessageId,
+      onOutlineNavigationIntent: _controller.beginOutlineNavigation,
       onVersionChange: (groupId, version) async {
         await _controller.setSelectedVersion(groupId, version);
       },

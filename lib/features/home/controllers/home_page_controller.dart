@@ -249,6 +249,12 @@ class HomePageController extends ChangeNotifier {
   String? _spotlightMessageId;
   int _spotlightToken = 0;
 
+  // Increments only for durable conversation/message changes. Window paging
+  // deliberately does not touch this so the full-history outline is not
+  // queried again while the user scrolls through a long chat.
+  int _conversationOutlineRevision = 0;
+  int _outlineNavigationRequest = 0;
+
   // Input bar measurement
   double _inputBarHeight = 72;
 
@@ -293,6 +299,7 @@ class HomePageController extends ChangeNotifier {
   String get globalSearchQuery => _globalSearchQuery;
   String? get spotlightMessageId => _spotlightMessageId;
   int get spotlightToken => _spotlightToken;
+  int get conversationOutlineRevision => _conversationOutlineRevision;
   UserMessageEditState? get userMessageEditState => _userMessageEditState;
   bool get isUserMessageEditActive => _userMessageEditState != null;
 
@@ -551,6 +558,7 @@ class HomePageController extends ChangeNotifier {
       _restoreMessageUiState();
       _scrollCtrl.positionAtBottomOnNextLayout();
     };
+    _viewModel.onMessagesChanged = _markConversationOutlineDirty;
     _viewModel.onStreamFinished = (conversationId) {
       // Trigger UI update when streaming finishes
       notifyListeners();
@@ -1555,6 +1563,7 @@ class HomePageController extends ChangeNotifier {
     }
     final gid = (newMsg.groupId ?? newMsg.id);
     versionSelections[gid] = newMsg.version;
+    _markConversationOutlineDirty();
     notifyListeners();
 
     if (!result.shouldSend) return;
@@ -1678,6 +1687,7 @@ class HomePageController extends ChangeNotifier {
     }
     final gid = newMsg.groupId ?? newMsg.id;
     versionSelections[gid] = newMsg.version;
+    _markConversationOutlineDirty();
     notifyListeners();
     return newMsg;
   }
@@ -2252,6 +2262,7 @@ class HomePageController extends ChangeNotifier {
         break;
       }
     }
+    _markConversationOutlineDirty();
     notifyListeners();
   }
 
@@ -2503,6 +2514,47 @@ class HomePageController extends ChangeNotifier {
 
   Future<List<MiniMapSearchHit>> searchMiniMapMatches(String query) =>
       _chatController.searchMiniMapMatches(query);
+
+  void beginOutlineNavigation() {
+    _outlineNavigationRequest++;
+    _scrollCtrl.beginOutlineNavigation();
+  }
+
+  void handleMessageListUserScrollIntent() {
+    _outlineNavigationRequest++;
+    _scrollCtrl.handleUserScrollIntent();
+  }
+
+  Future<void> scrollToOutlineMessageId(String targetId) async {
+    beginOutlineNavigation();
+    final request = _outlineNavigationRequest;
+    final conversationId = currentConversation?.id;
+    if (conversationId == null) return;
+
+    if (_chatController.indexOfCollapsedMessageId(targetId) < 0) {
+      final loaded = await _viewModel.loadUntilMessageVisible(targetId);
+      if (!loaded ||
+          request != _outlineNavigationRequest ||
+          currentConversation?.id != conversationId) {
+        return;
+      }
+      try {
+        await WidgetsBinding.instance.endOfFrame;
+      } catch (_) {}
+    }
+    if (request != _outlineNavigationRequest ||
+        currentConversation?.id != conversationId) {
+      return;
+    }
+    final index = _chatController.indexOfCollapsedMessageId(targetId);
+    if (index < 0) return;
+    await _scrollCtrl.scrollToMessageId(targetId: targetId, targetIndex: index);
+  }
+
+  void _markConversationOutlineDirty() {
+    _conversationOutlineRevision++;
+    _outlineNavigationRequest++;
+  }
 
   // Issue 7 audit: jumps via collapsed-index + loadUntilMessageVisible only.
   // Does not call ChatService.getMessageIndex, so an absent message-order

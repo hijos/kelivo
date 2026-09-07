@@ -39,6 +39,7 @@ import '../../core/providers/settings_provider.dart';
 import 'package:Kelivo/desktop/html_preview_dialog.dart';
 import '../cache/byte_lru_cache.dart';
 import 'incremental_markdown_document.dart';
+import 'markdown_heading_outline.dart';
 import 'markdown_line_lexer.dart';
 
 // Inline math is parsed on the UI thread. Bound the lookahead window so a long
@@ -92,6 +93,9 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
     this.citationIndexResolver,
     this.baseStyle,
     this.streaming = false,
+    this.headingRegistry,
+    this.headingScopeId,
+    this.headingScopeOrder = 0,
   });
 
   final String text;
@@ -103,6 +107,9 @@ class MarkdownWithCodeHighlight extends StatefulWidget {
   final String? Function(String id)? citationIndexResolver;
   final TextStyle? baseStyle; // optional override for base markdown text style
   final bool streaming;
+  final MarkdownHeadingRegistry? headingRegistry;
+  final String? headingScopeId;
+  final int headingScopeOrder;
 
   static const int _streamingTableMaxRows = 30;
   static const int _streamingHighlightMaxLines = 300;
@@ -148,6 +155,13 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   @override
   void didUpdateWidget(covariant MarkdownWithCodeHighlight oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.headingRegistry != widget.headingRegistry ||
+        oldWidget.headingScopeId != widget.headingScopeId) {
+      final oldScopeId = oldWidget.headingScopeId;
+      if (oldScopeId != null) {
+        oldWidget.headingRegistry?.removeScope(oldScopeId);
+      }
+    }
     if (oldWidget.text == widget.text &&
         oldWidget.streaming == widget.streaming) {
       return;
@@ -158,6 +172,8 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
   @override
   void dispose() {
     _renderDebounce?.cancel();
+    final scopeId = widget.headingScopeId;
+    if (scopeId != null) widget.headingRegistry?.removeScope(scopeId);
     super.dispose();
   }
 
@@ -322,12 +338,23 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
     final documentRevision =
         '${_imageRevision(imageUrls)}\u0002${_citationRevision(sanitizedText, widget.citationIndexResolver)}';
     final themeSignature =
-        '${Theme.of(context).brightness.index}-${cs.surface.toARGB32()}-${inkColor.toARGB32()}-${cs.primary.toARGB32()}-${cs.outlineVariant.toARGB32()}-${settings.enableMathRendering}-${settings.enableDollarLatex}-${widget.streaming}-${baseTextStyle?.fontSize}-${baseTextStyle?.height}-${baseTextStyle?.letterSpacing}-${baseTextStyle?.fontFamily}-$codeFontFamily-$appFontFamily-$documentRevision';
+        '${Theme.of(context).brightness.index}-${cs.surface.toARGB32()}-${inkColor.toARGB32()}-${cs.primary.toARGB32()}-${cs.outlineVariant.toARGB32()}-${settings.enableMathRendering}-${settings.enableDollarLatex}-${widget.streaming}-${baseTextStyle?.fontSize}-${baseTextStyle?.height}-${baseTextStyle?.letterSpacing}-${baseTextStyle?.fontFamily}-$codeFontFamily-$appFontFamily-$documentRevision-${widget.headingScopeId ?? ''}';
 
-    Widget buildMarkdown(String markdown, Key key) {
+    Widget buildMarkdown(
+      String markdown,
+      Key key, {
+      List<GlobalKey> headingKeys = const <GlobalKey>[],
+    }) {
       final detailsRegistry = MarkdownDetailsRegistry(
         enableMath: settings.enableMathRendering,
       );
+      final renderComponents = <MarkdownComponent>[
+        for (final component in components)
+          if (component is AtxHeadingMd)
+            AtxHeadingMd(anchorKeys: headingKeys)
+          else
+            component,
+      ];
       return GptMarkdown(
         key: key,
         markdown,
@@ -338,7 +365,7 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
         onLinkTap: (url, title) => _handleLinkTap(context, url),
         preprocessBlocks: detailsRegistry.rewrite,
         generation: themeSignature,
-        components: [DetailsHtmlMd(detailsRegistry), ...components],
+        components: [DetailsHtmlMd(detailsRegistry), ...renderComponents],
         inlineComponents: inlineComponents,
         imageBuilder: (ctx, url, width, height) {
           final imgs = imageUrls.isNotEmpty ? imageUrls : <String>[url];
@@ -624,6 +651,57 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
               ),
           ]
         : const <String>[];
+    final blockHeadingKeys = <int, List<GlobalKey>>{};
+    final headingRegistry = widget.headingRegistry;
+    final headingScopeId = widget.headingScopeId;
+    if (headingRegistry != null && headingScopeId != null) {
+      final contents = useIncrementalBlocks
+          ? blockContents
+          : <String>[normalized!];
+      final starts = useIncrementalBlocks
+          ? <int>[for (final block in sourceBlocks) block.start]
+          : const <int>[0];
+      final specs = <MarkdownHeadingSpec>[];
+      final idsByBlock = <int, List<String>>{};
+      for (var blockIndex = 0; blockIndex < contents.length; blockIndex++) {
+        final candidates = extractMarkdownHeadingCandidates(
+          contents[blockIndex],
+        );
+        final ids = <String>[];
+        for (
+          var headingIndex = 0;
+          headingIndex < candidates.length;
+          headingIndex++
+        ) {
+          final candidate = candidates[headingIndex];
+          final id =
+              '$headingScopeId:${starts[blockIndex]}:${candidate.offset}:$headingIndex';
+          ids.add(id);
+          specs.add(
+            MarkdownHeadingSpec(
+              id: id,
+              level: candidate.level,
+              title: candidate.title,
+            ),
+          );
+        }
+        idsByBlock[blockIndex] = ids;
+      }
+      final anchors = headingRegistry.replaceScope(
+        headingScopeId,
+        widget.headingScopeOrder,
+        specs,
+      );
+      final anchorsById = <String, GlobalKey>{
+        for (final anchor in anchors) anchor.id: anchor.anchorKey,
+      };
+      for (final entry in idsByBlock.entries) {
+        blockHeadingKeys[entry.key] = <GlobalKey>[
+          for (final id in entry.value)
+            if (anchorsById[id] != null) anchorsById[id]!,
+        ];
+      }
+    }
     final markdownWidget = useIncrementalBlocks
         ? _MarkdownBlockColumn(
             children: [
@@ -647,7 +725,11 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
                   source: sourceBlocks[i].text,
                   content: blockContents[i],
                   signature: themeSignature,
-                  builder: buildMarkdown,
+                  builder: (content, key) => buildMarkdown(
+                    content,
+                    key,
+                    headingKeys: blockHeadingKeys[i] ?? const <GlobalKey>[],
+                  ),
                 ),
               ],
             ],
@@ -656,7 +738,11 @@ class _MarkdownWithCodeHighlightState extends State<MarkdownWithCodeHighlight> {
             source: sanitizedText,
             content: normalized!,
             signature: themeSignature,
-            builder: buildMarkdown,
+            builder: (content, key) => buildMarkdown(
+              content,
+              key,
+              headingKeys: blockHeadingKeys[0] ?? const <GlobalKey>[],
+            ),
           );
 
     final result = appFontFamily.isEmpty
@@ -5174,11 +5260,16 @@ class InlineLatexParenScrollableMd extends InlineMd {
 /// Single-line ATX. Opening `#{1,6}`, closing `#+`, horizontal blanks only.
 /// Shared by [AtxHeadingMd] and the `## 1.引言` preprocessor so they cannot
 /// drift back into `\s` / cross-line matching.
-const String _atxHeadingLine =
-    r'[ \t]{0,3}(#{1,6})[ \t]+([^\r\n\u2028\u2029]+?)(?:[ \t]+#+[ \t]*)?';
+const String _atxHeadingLine = markdownAtxHeadingLinePattern;
 
 // Balanced ATX-style headings (#, ##, ###, …) with consistent spacing and typography
 class AtxHeadingMd extends BlockMd {
+  AtxHeadingMd({this.anchorKeys = const <GlobalKey>[]});
+
+  final List<GlobalKey> anchorKeys;
+  int _anchorIndex = 0;
+  bool _anchorResetScheduled = false;
+
   @override
   // `exp` is overridden so BlockMd's `^\ *?` prefix cannot widen the
   // 0–3 space indent the way `^\ *?^[ \t]{0,3}` would.
@@ -5214,7 +5305,18 @@ class AtxHeadingMd extends BlockMd {
       _ => 2.0,
     };
 
-    return Padding(
+    if (!_anchorResetScheduled && anchorKeys.isNotEmpty) {
+      _anchorResetScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _anchorIndex = 0;
+        _anchorResetScheduled = false;
+      });
+    }
+    final anchorKey = _anchorIndex < anchorKeys.length
+        ? anchorKeys[_anchorIndex]
+        : null;
+    _anchorIndex++;
+    final heading = Padding(
       padding: EdgeInsets.only(top: top, bottom: bottom),
       child: DefaultTextStyle.merge(
         // Use selection-aware renderer from config so headings can be selected/copied
@@ -5222,6 +5324,9 @@ class AtxHeadingMd extends BlockMd {
         child: config.getRich(inner),
       ),
     );
+    return anchorKey == null
+        ? heading
+        : KeyedSubtree(key: anchorKey, child: heading);
   }
 
   TextStyle _headingTextStyle(
@@ -5412,6 +5517,7 @@ class ModernBlockQuote extends InlineMd {
               if (component is FencedCodeBlockMd) {
                 return FencedCodeBlockMd(streaming: false);
               }
+              if (component is AtxHeadingMd) return AtxHeadingMd();
               return component;
             })
             .toList(growable: false);
@@ -5923,7 +6029,15 @@ class _DetailsHtmlBlockState extends State<_DetailsHtmlBlock> {
     final bodyStyle = (widget.config.style ?? TextStyle()).copyWith(
       color: _markdownInkColor(context),
     );
-    final bodyConfig = widget.config.copyWith(style: bodyStyle);
+    final bodyConfig = widget.config.copyWith(
+      style: bodyStyle,
+      components: widget.config.components
+          ?.map(
+            (component) =>
+                component is AtxHeadingMd ? AtxHeadingMd() : component,
+          )
+          .toList(growable: false),
+    );
 
     return Container(
       key: const ValueKey('details-surface'),

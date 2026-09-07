@@ -264,6 +264,12 @@ class SettingsProvider extends ChangeNotifier {
       'display_auto_scroll_enabled_v1';
   static const String _displayAutoScrollIdleSecondsKey =
       'display_auto_scroll_idle_seconds_v1';
+  static const String _displayChatOutlineMaxHeightRatioKey =
+      'display_chat_outline_max_height_ratio_v1';
+  static const String _displayChatOutlineLeftWidthKey =
+      'display_chat_outline_left_width_v1';
+  static const String _displayChatOutlineRightWidthKey =
+      'display_chat_outline_right_width_v1';
   static const String _displayChatBackgroundMaskStrengthKey =
       'display_chat_background_mask_strength_v1';
   static const String _displayChatInputBackgroundOpacityLightKey =
@@ -1231,6 +1237,16 @@ class SettingsProvider extends ChangeNotifier {
     _autoScrollEnabled = prefs.getBool(_displayAutoScrollEnabledKey) ?? true;
     _autoScrollIdleSeconds =
         prefs.getInt(_displayAutoScrollIdleSecondsKey) ?? 8;
+    _chatOutlineMaxHeightRatio =
+        (localPreferences.getDouble(_displayChatOutlineMaxHeightRatioKey) ??
+                0.4)
+            .clamp(0.1, 1.0);
+    _chatOutlineLeftWidth = _normalizeChatOutlineWidth(
+      localPreferences.getDouble(_displayChatOutlineLeftWidthKey) ?? 300,
+    );
+    _chatOutlineRightWidth = _normalizeChatOutlineWidth(
+      localPreferences.getDouble(_displayChatOutlineRightWidthKey) ?? 300,
+    );
     _chatBackgroundMaskStrength =
         prefs.getDouble(_displayChatBackgroundMaskStrengthKey) ?? 1.0;
     _chatInputBackgroundOpacityLight =
@@ -5143,6 +5159,47 @@ Requirements:
     );
   }
 
+  // Display: maximum chat-outline height as a share of the chat viewport.
+  double _chatOutlineMaxHeightRatio = 0.4;
+  double get chatOutlineMaxHeightRatio => _chatOutlineMaxHeightRatio;
+  Future<void> setChatOutlineMaxHeightRatio(double ratio) async {
+    final value = ratio.clamp(0.1, 1.0);
+    if (_chatOutlineMaxHeightRatio == value) return;
+    _chatOutlineMaxHeightRatio = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(
+      _displayChatOutlineMaxHeightRatioKey,
+      _chatOutlineMaxHeightRatio,
+    );
+  }
+
+  static double _normalizeChatOutlineWidth(double width) =>
+      width.isFinite ? width.clamp(180.0, 600.0) : 300.0;
+
+  double _chatOutlineLeftWidth = 300;
+  double get chatOutlineLeftWidth => _chatOutlineLeftWidth;
+  double _chatOutlineRightWidth = 300;
+  double get chatOutlineRightWidth => _chatOutlineRightWidth;
+
+  Future<void> setChatOutlineLeftWidth(double width) async {
+    final value = _normalizeChatOutlineWidth(width);
+    if (_chatOutlineLeftWidth == value) return;
+    _chatOutlineLeftWidth = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_displayChatOutlineLeftWidthKey, value);
+  }
+
+  Future<void> setChatOutlineRightWidth(double width) async {
+    final value = _normalizeChatOutlineWidth(width);
+    if (_chatOutlineRightWidth == value) return;
+    _chatOutlineRightWidth = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_displayChatOutlineRightWidthKey, value);
+  }
+
   // Display: chat background mask strength (0.0 - 2.0, default 1.0)
   double _chatBackgroundMaskStrength = 1.0;
   double get chatBackgroundMaskStrength => _chatBackgroundMaskStrength;
@@ -5873,6 +5930,9 @@ Requirements:
     copy._chatFontScale = _chatFontScale;
     copy._autoScrollEnabled = _autoScrollEnabled;
     copy._autoScrollIdleSeconds = _autoScrollIdleSeconds;
+    copy._chatOutlineMaxHeightRatio = _chatOutlineMaxHeightRatio;
+    copy._chatOutlineLeftWidth = _chatOutlineLeftWidth;
+    copy._chatOutlineRightWidth = _chatOutlineRightWidth;
     copy._enableDollarLatex = _enableDollarLatex;
     copy._enableMathRendering = _enableMathRendering;
     copy._enableUserMarkdown = _enableUserMarkdown;

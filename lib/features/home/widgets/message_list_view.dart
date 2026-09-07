@@ -18,6 +18,7 @@ import '../../../core/database/generation_run.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../utils/assistant_regex.dart';
 import '../../../shared/widgets/ios_checkbox.dart';
+import '../../../shared/widgets/markdown_heading_outline.dart';
 import '../../chat/widgets/chat_message_widget.dart';
 import '../../chat/widgets/timeline_projection.dart';
 import '../../chat/widgets/timeline_visibility.dart';
@@ -31,7 +32,9 @@ import '../services/ask_user_interaction_service.dart';
 import '../services/local_tools_service.dart';
 import '../services/tool_approval_service.dart';
 import '../utils/chat_layout_constants.dart';
+import '../utils/chat_outline_summary.dart';
 import 'model_icon.dart';
+import 'chat_outline_rail.dart';
 
 /// Callback types for message list view actions
 typedef OnVersionChange = Future<void> Function(String groupId, int version);
@@ -150,6 +153,9 @@ class MessageListView extends StatefulWidget {
     this.onLoadMoreAfter,
     this.onUserScrollIntent,
     this.chatFontScale = 1,
+    this.chatOutlineMaxHeightRatio = 0.4,
+    this.chatOutlineLeftWidth = 300,
+    this.chatOutlineRightWidth = 300,
     this.collapseThinking = true,
     this.collapseThinkingSteps = false,
     this.showThinkingCards = true,
@@ -162,6 +168,9 @@ class MessageListView extends StatefulWidget {
     this.showUserAvatar = true,
     this.showTokenStats = false,
     this.assistant,
+    this.conversationOutlineMessages = const <ChatMessage>[],
+    this.onOutlineMessageTap,
+    this.onOutlineNavigationIntent,
   });
 
   final ScrollController scrollController;
@@ -247,6 +256,9 @@ class MessageListView extends StatefulWidget {
   final Future<bool> Function()? onLoadMoreAfter;
   final VoidCallback? onUserScrollIntent;
   final double chatFontScale;
+  final double chatOutlineMaxHeightRatio;
+  final double chatOutlineLeftWidth;
+  final double chatOutlineRightWidth;
 
   /// Whether finished thinking blocks render collapsed (display setting).
   final bool collapseThinking;
@@ -279,6 +291,9 @@ class MessageListView extends StatefulWidget {
   final bool showUserAvatar;
   final bool showTokenStats;
   final Assistant? assistant;
+  final List<ChatMessage> conversationOutlineMessages;
+  final Future<void> Function(String messageId)? onOutlineMessageTap;
+  final VoidCallback? onOutlineNavigationIntent;
 
   @visibleForTesting
   static const Key windowSkeletonKey = ValueKey<String>(
@@ -320,6 +335,12 @@ class _MessageListViewState extends State<MessageListView> {
   final FocusNode _keyboardFocusNode = FocusNode(
     debugLabel: 'timeline-keyboard-scroll-region',
   );
+  final Map<String, MarkdownHeadingRegistry> _headingRegistries =
+      <String, MarkdownHeadingRegistry>{};
+  final ValueNotifier<_ReadingOutlineState> _readingOutline =
+      ValueNotifier<_ReadingOutlineState>(const _ReadingOutlineState());
+  bool _readingUpdateScheduled = false;
+  int _outlineNavigationRequest = 0;
 
   String _slotId(ChatMessage message) => message.groupId ?? message.id;
 
@@ -331,11 +352,16 @@ class _MessageListViewState extends State<MessageListView> {
     widget.streamingContentNotifier?.toolHeightEvents.addListener(
       _handleToolHeightEvent,
     );
+    _scheduleReadingUpdate();
   }
 
   @override
   void didUpdateWidget(covariant MessageListView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.messages, widget.messages) ||
+        oldWidget.versionSelections != widget.versionSelections) {
+      _outlineNavigationRequest++;
+    }
     if (oldWidget.streamingContentNotifier != widget.streamingContentNotifier) {
       oldWidget.streamingContentNotifier?.toolHeightEvents.removeListener(
         _handleToolHeightEvent,
@@ -350,8 +376,36 @@ class _MessageListViewState extends State<MessageListView> {
     }
     final oldRenderModels = _effectiveRenderModels;
     _refreshRenderModels();
+    _pruneHeadingRegistries();
     _synchronizeExtentCache(oldWidget, oldRenderModels);
     _snapshotToolSignatures();
+    _scheduleReadingUpdate();
+  }
+
+  MarkdownHeadingRegistry? _headingRegistryFor(ChatMessage message) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        message.role != 'assistant') {
+      return null;
+    }
+    return _headingRegistries.putIfAbsent(message.id, () {
+      final registry = MarkdownHeadingRegistry();
+      registry.addListener(_scheduleReadingUpdate);
+      return registry;
+    });
+  }
+
+  void _pruneHeadingRegistries() {
+    final liveIds = <String>{
+      for (final model in _effectiveRenderModels) model.message.id,
+    };
+    final staleIds = _headingRegistries.keys
+        .where((id) => !liveIds.contains(id))
+        .toList(growable: false);
+    for (final id in staleIds) {
+      final registry = _headingRegistries.remove(id);
+      registry?.removeListener(_scheduleReadingUpdate);
+      registry?.dispose();
+    }
   }
 
   void _refreshRenderModels() {
@@ -382,6 +436,164 @@ class _MessageListViewState extends State<MessageListView> {
             widget.toolParts[model.message.id],
           ),
       });
+  }
+
+  void _scheduleReadingUpdate() {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        _readingUpdateScheduled) {
+      return;
+    }
+    _readingUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _readingUpdateScheduled = false;
+      if (mounted) _updateReadingOutline();
+    });
+  }
+
+  void _updateReadingOutline() {
+    final controller = widget.listController;
+    if (!widget.scrollController.hasClients || !controller.isAttached) {
+      _setReadingOutline(const _ReadingOutlineState());
+      return;
+    }
+    final visible = controller.visibleRange;
+    if (visible == null || _effectiveRenderModels.isEmpty) {
+      _setReadingOutline(const _ReadingOutlineState());
+      return;
+    }
+    final first = visible.$1.clamp(0, _effectiveRenderModels.length - 1);
+    final last = visible.$2.clamp(0, _effectiveRenderModels.length - 1);
+    final readingOffset =
+        widget.scrollController.position.pixels + widget.topContentPadding + 8;
+    var readingIndex = first;
+    for (var index = first; index <= last; index++) {
+      // ignore: invalid_use_of_visible_for_testing_member
+      final leading = controller.getOffsetToReveal(index, 0);
+      final extent = controller.extentForIndex(index).$1;
+      readingIndex = index;
+      if (leading + extent > readingOffset + 0.5) break;
+    }
+
+    var messageIndex = readingIndex;
+    if (!_isOutlineMessage(_effectiveRenderModels[messageIndex].message)) {
+      for (var index = readingIndex + 1; index <= last; index++) {
+        if (_isOutlineMessage(_effectiveRenderModels[index].message)) {
+          messageIndex = index;
+          break;
+        }
+      }
+    }
+    final activeMessage = _effectiveRenderModels[messageIndex].message;
+
+    int? assistantIndex;
+    if (activeMessage.role == 'assistant') {
+      assistantIndex = messageIndex;
+    } else {
+      for (var index = messageIndex + 1; index <= last; index++) {
+        final candidate = _effectiveRenderModels[index].message;
+        if (candidate.role == 'assistant' && !candidate.isStreaming) {
+          assistantIndex = index;
+          break;
+        }
+      }
+    }
+    final assistantMessage = assistantIndex == null
+        ? null
+        : _effectiveRenderModels[assistantIndex].message;
+    final registry = assistantMessage == null
+        ? null
+        : _headingRegistries[assistantMessage.id];
+    final headings = registry?.headings ?? const <MarkdownHeadingAnchor>[];
+    String? activeHeadingId;
+    if (headings.isNotEmpty) {
+      final listBox = context.findRenderObject();
+      if (listBox is RenderBox && listBox.hasSize) {
+        final readingY = listBox
+            .localToGlobal(Offset(0, widget.topContentPadding + 8))
+            .dy;
+        for (final heading in headings) {
+          final headingBox = heading.anchorKey.currentContext
+              ?.findRenderObject();
+          if (headingBox is! RenderBox || !headingBox.hasSize) continue;
+          final headingY = headingBox.localToGlobal(Offset.zero).dy;
+          if (headingY <= readingY + 0.5) {
+            activeHeadingId = heading.id;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+    _setReadingOutline(
+      _ReadingOutlineState(
+        messageId: activeMessage.id,
+        assistantMessageId: headings.length >= 2 ? assistantMessage?.id : null,
+        activeHeadingId: activeHeadingId,
+      ),
+    );
+  }
+
+  bool _isOutlineMessage(ChatMessage message) =>
+      message.role == 'user' || message.role == 'assistant';
+
+  void _setReadingOutline(_ReadingOutlineState value) {
+    if (_readingOutline.value != value) _readingOutline.value = value;
+  }
+
+  Future<void> _scrollToHeading(MarkdownHeadingAnchor heading) async {
+    final targetContext = heading.anchorKey.currentContext;
+    if (targetContext == null || !widget.scrollController.hasClients) return;
+    widget.onOutlineNavigationIntent?.call();
+    final request = ++_outlineNavigationRequest;
+    final listBox = context.findRenderObject();
+    final headingBox = targetContext.findRenderObject();
+    if (listBox is! RenderBox ||
+        headingBox is! RenderBox ||
+        !listBox.hasSize ||
+        !headingBox.hasSize) {
+      return;
+    }
+    final readingY = listBox
+        .localToGlobal(Offset(0, widget.topContentPadding + 8))
+        .dy;
+    final headingY = headingBox.localToGlobal(Offset.zero).dy;
+    final position = widget.scrollController.position;
+    final target = (position.pixels + headingY - readingY).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    await position.animateTo(
+      target,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+    if (!mounted || request != _outlineNavigationRequest) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted ||
+        request != _outlineNavigationRequest ||
+        !widget.scrollController.hasClients) {
+      return;
+    }
+    final correctedBox = heading.anchorKey.currentContext?.findRenderObject();
+    final correctedListBox = context.findRenderObject();
+    if (correctedBox is RenderBox &&
+        correctedListBox is RenderBox &&
+        correctedBox.hasSize &&
+        correctedListBox.hasSize) {
+      final correctedReadingY = correctedListBox
+          .localToGlobal(Offset(0, widget.topContentPadding + 8))
+          .dy;
+      final delta =
+          correctedBox.localToGlobal(Offset.zero).dy - correctedReadingY;
+      final current = widget.scrollController.position;
+      current.jumpTo(
+        (current.pixels + delta).clamp(
+          current.minScrollExtent,
+          current.maxScrollExtent,
+        ),
+      );
+    }
+    _scheduleReadingUpdate();
   }
 
   void _handleToolHeightEvent() {
@@ -1579,6 +1791,12 @@ class _MessageListViewState extends State<MessageListView> {
       _handleToolHeightEvent,
     );
     _scrollIdleTimer?.cancel();
+    for (final registry in _headingRegistries.values) {
+      registry.removeListener(_scheduleReadingUpdate);
+      registry.dispose();
+    }
+    _headingRegistries.clear();
+    _readingOutline.dispose();
     _deferStreamingMessageUpdates.dispose();
     _keyboardFocusNode.dispose();
     super.dispose();
@@ -1670,9 +1888,18 @@ class _MessageListViewState extends State<MessageListView> {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPad =
+        final centeredHorizontalPad =
             ((constraints.maxWidth - ChatLayoutConstants.maxContentWidth) / 2)
                 .clamp(0.0, double.infinity);
+        final hasConversationOutline =
+            defaultTargetPlatform == TargetPlatform.windows &&
+            widget.conversationOutlineMessages.any(_isOutlineMessage);
+        final leftContentPadding = hasConversationOutline
+            ? math.max(centeredHorizontalPad, 44.0)
+            : centeredHorizontalPad;
+        final rightContentPadding = hasConversationOutline
+            ? math.max(centeredHorizontalPad, 68.0)
+            : centeredHorizontalPad;
 
         return Builder(
           builder: (context) {
@@ -1685,9 +1912,9 @@ class _MessageListViewState extends State<MessageListView> {
               findChildIndexCallback: _findMessageIndexByKey,
               extentEstimation: _estimateItemExtent,
               padding: EdgeInsets.fromLTRB(
-                horizontalPad,
+                leftContentPadding,
                 widget.topContentPadding,
-                horizontalPad,
+                rightContentPadding,
                 widget.bottomContentPadding +
                     (widget.isPinnedIndicatorActive ? 12 : 0),
               ),
@@ -1727,6 +1954,8 @@ class _MessageListViewState extends State<MessageListView> {
               onPointerCancel: (_) => _settlePointerDrag(),
               onPointerSignal: (event) {
                 if (event is PointerScrollEvent) {
+                  _outlineNavigationRequest++;
+                  widget.onOutlineNavigationIntent?.call();
                   _setDeferStreamingMessageUpdates(true);
                   _schedulePointerScrollActivityCheck();
                 }
@@ -1747,7 +1976,10 @@ class _MessageListViewState extends State<MessageListView> {
                     child: IgnorePointer(
                       child: _WindowLoadingSkeleton(
                         key: MessageListView.windowSkeletonKey,
-                        horizontalPadding: horizontalPad,
+                        horizontalPadding: math.max(
+                          leftContentPadding,
+                          rightContentPadding,
+                        ),
                         topPadding: widget.topContentPadding,
                       ),
                     ),
@@ -1755,11 +1987,136 @@ class _MessageListViewState extends State<MessageListView> {
                 if (widget.isPinnedIndicatorActive &&
                     widget.buildPinnedStreamingIndicator != null)
                   widget.buildPinnedStreamingIndicator!(),
+                if (defaultTargetPlatform == TargetPlatform.windows)
+                  Positioned.fill(child: _buildOutlineRails()),
               ],
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildOutlineRails() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final topInset = widget.topContentPadding + 12;
+        final bottomInset = widget.bottomContentPadding + 16;
+        final availableHeight = math.max(
+          0.0,
+          constraints.maxHeight - topInset - bottomInset,
+        );
+        final maxRailHeight =
+            availableHeight * widget.chatOutlineMaxHeightRatio.clamp(0.1, 1.0);
+        double expandedWidth(double preferred) => math.min(
+          preferred.clamp(180.0, 600.0),
+          math.max(28.0, constraints.maxWidth - 72),
+        );
+        return ValueListenableBuilder<_ReadingOutlineState>(
+          valueListenable: _readingOutline,
+          builder: (context, reading, _) {
+            final assistantId = reading.assistantMessageId;
+            final headings = assistantId == null
+                ? const <MarkdownHeadingAnchor>[]
+                : (_headingRegistries[assistantId]?.headings ??
+                      const <MarkdownHeadingAnchor>[]);
+            final leftEntries = <ChatOutlineRailEntry>[
+              for (final heading in headings)
+                if (heading.level <= 3)
+                  ChatOutlineRailEntry(
+                    id: heading.id,
+                    label: heading.title,
+                    depth: heading.level - 1,
+                  ),
+            ];
+            var activeHeadingId = reading.activeHeadingId;
+            if (activeHeadingId != null &&
+                !leftEntries.any((entry) => entry.id == activeHeadingId)) {
+              final activeIndex = headings.indexWhere(
+                (heading) => heading.id == activeHeadingId,
+              );
+              activeHeadingId = null;
+              for (var index = activeIndex - 1; index >= 0; index--) {
+                if (headings[index].level <= 3) {
+                  activeHeadingId = headings[index].id;
+                  break;
+                }
+              }
+            }
+            final rightEntries = <ChatOutlineRailEntry>[
+              for (final message in widget.conversationOutlineMessages)
+                if (_isOutlineMessage(message))
+                  ChatOutlineRailEntry(
+                    id: message.id,
+                    label:
+                        '${message.role == 'user' ? 'user' : 'model'}: ${_messageOutlineSummary(context, message)}',
+                  ),
+            ];
+            return Stack(
+              children: [
+                if (leftEntries.length >= 2)
+                  Positioned(
+                    left: 8,
+                    top: topInset,
+                    child: ChatOutlineRail(
+                      side: ChatOutlineSide.left,
+                      entries: leftEntries,
+                      activeId: activeHeadingId,
+                      expandedWidth: expandedWidth(widget.chatOutlineLeftWidth),
+                      maxHeight: maxRailHeight,
+                      showNestedEntriesToggle: leftEntries.any(
+                        (entry) => entry.depth == 1 || entry.depth == 2,
+                      ),
+                      expandNestedEntriesTooltip: AppLocalizations.of(
+                        context,
+                      )!.chatOutlineExpandSubheadings,
+                      collapseNestedEntriesTooltip: AppLocalizations.of(
+                        context,
+                      )!.chatOutlineCollapseSubheadings,
+                      onTap: (entry) {
+                        for (final heading in headings) {
+                          if (heading.id == entry.id) {
+                            unawaited(_scrollToHeading(heading));
+                            return;
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                if (rightEntries.isNotEmpty)
+                  Positioned(
+                    right: 25,
+                    top: topInset,
+                    child: ChatOutlineRail(
+                      side: ChatOutlineSide.right,
+                      entries: rightEntries,
+                      activeId: reading.messageId,
+                      expandedWidth: expandedWidth(
+                        widget.chatOutlineRightWidth,
+                      ),
+                      maxHeight: maxRailHeight,
+                      onTap: (entry) {
+                        _outlineNavigationRequest++;
+                        widget.onOutlineNavigationIntent?.call();
+                        final callback = widget.onOutlineMessageTap;
+                        if (callback != null) unawaited(callback(entry.id));
+                      },
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _messageOutlineSummary(BuildContext context, ChatMessage message) {
+    final l10n = AppLocalizations.of(context)!;
+    return buildChatOutlineMessageSummary(
+      message,
+      generatingLabel: '${l10n.multiModelStatusGenerating}…',
+      noTextLabel: l10n.chatOutlineNoTextContent,
     );
   }
 
@@ -1776,6 +2133,8 @@ class _MessageListViewState extends State<MessageListView> {
         key != LogicalKeyboardKey.end) {
       return KeyEventResult.ignored;
     }
+    _outlineNavigationRequest++;
+    widget.onOutlineNavigationIntent?.call();
     widget.onUserScrollIntent?.call();
     return KeyEventResult.ignored;
   }
@@ -1783,6 +2142,12 @@ class _MessageListViewState extends State<MessageListView> {
   bool _handleScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
+    _scheduleReadingUpdate();
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _outlineNavigationRequest++;
+      widget.onOutlineNavigationIntent?.call();
+    }
     if (notification is ScrollUpdateNotification) {
       if (notification.dragDetails != null) {
         _recordPointerDrag(notification.metrics);
@@ -2287,6 +2652,9 @@ class _MessageListViewState extends State<MessageListView> {
     final currentIdx = availableVersions.indexOf(selectedVersion);
     return ChatMessageWidget(
       message: message,
+      headingRegistry: message.isStreaming
+          ? null
+          : _headingRegistryFor(message),
       enableStreamingTextMotion: enableStreamingTextMotion,
       versionIndex: hideLegacyVersionSwitcher
           ? 0
@@ -2491,6 +2859,30 @@ class _MessageListViewState extends State<MessageListView> {
     }
     return null;
   }
+}
+
+@immutable
+class _ReadingOutlineState {
+  const _ReadingOutlineState({
+    this.messageId,
+    this.assistantMessageId,
+    this.activeHeadingId,
+  });
+
+  final String? messageId;
+  final String? assistantMessageId;
+  final String? activeHeadingId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ReadingOutlineState &&
+      other.messageId == messageId &&
+      other.assistantMessageId == assistantMessageId &&
+      other.activeHeadingId == activeHeadingId;
+
+  @override
+  int get hashCode =>
+      Object.hash(messageId, assistantMessageId, activeHeadingId);
 }
 
 final class _EstimateIdSet {

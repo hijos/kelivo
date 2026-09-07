@@ -7951,6 +7951,12 @@ abstract class AppLocalizations {
   /// **'Minimap'**
   String get miniMapTitle;
 
+  /// No description provided for @chatOutlineNoTextContent.
+  ///
+  /// In en, this message translates to:
+  /// **'No text content'**
+  String get chatOutlineNoTextContent;
+
   /// No description provided for @miniMapTooltip.
   ///
   /// In en, this message translates to:
@@ -9096,6 +9102,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Chat Background Overlay Opacity'**
   String get displaySettingsPageChatBackgroundMaskTitle;
+
+  /// No description provided for @displaySettingsPageChatOutlineMaxHeightTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Outline Maximum Height'**
+  String get displaySettingsPageChatOutlineMaxHeightTitle;
+
+  /// No description provided for @displaySettingsPageChatOutlineLeftWidthTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Left outline width'**
+  String get displaySettingsPageChatOutlineLeftWidthTitle;
+
+  /// No description provided for @displaySettingsPageChatOutlineRightWidthTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Right outline width'**
+  String get displaySettingsPageChatOutlineRightWidthTitle;
+
+  /// No description provided for @chatOutlineExpandSubheadings.
+  ///
+  /// In en, this message translates to:
+  /// **'Show H2–H3 headings'**
+  String get chatOutlineExpandSubheadings;
+
+  /// No description provided for @chatOutlineCollapseSubheadings.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide H2–H3 headings'**
+  String get chatOutlineCollapseSubheadings;
 
   /// No description provided for @displaySettingsPageChatInputBackgroundOpacityTitle.
   ///

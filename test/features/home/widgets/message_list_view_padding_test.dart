@@ -15,6 +15,7 @@ import 'package:Kelivo/features/home/services/ask_user_interaction_service.dart'
 import 'package:Kelivo/features/home/services/tool_approval_service.dart';
 import 'package:Kelivo/features/home/utils/chat_layout_constants.dart';
 import 'package:Kelivo/features/home/widgets/message_list_view.dart';
+import 'package:Kelivo/features/home/widgets/chat_outline_rail.dart';
 import 'package:Kelivo/l10n/app_localizations.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,8 @@ void main() {
     try {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: MessageListView(
               scrollController: scrollController,
@@ -86,6 +89,8 @@ void main() {
     try {
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           home: Scaffold(
             body: MessageListView(
               scrollController: scrollController,
@@ -112,6 +117,132 @@ void main() {
         listView.keyboardDismissBehavior,
         ScrollViewKeyboardDismissBehavior.onDrag,
       );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+      scrollController.dispose();
+      listController.dispose();
+      processingFilesMessageId.dispose();
+    }
+  });
+
+  testWidgets('Windows 窄窗口为双侧目录保留正文空间', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final scrollController = ScrollController();
+    final listController = ListController();
+    final processingFilesMessageId = ValueNotifier<String?>(null);
+
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              child: MessageListView(
+                scrollController: scrollController,
+                listController: listController,
+                messages: const [],
+                byGroup: const {},
+                versionSelections: const {},
+                reasoning: const {},
+                reasoningSegments: const {},
+                contentSplits: const {},
+                toolParts: const {},
+                translations: const {},
+                selecting: false,
+                selectedItems: const {},
+                dividerPadding: EdgeInsets.zero,
+                processingFilesMessageId: processingFilesMessageId,
+                chatOutlineMaxHeightRatio: 0.25,
+                chatOutlineLeftWidth: 360,
+                chatOutlineRightWidth: 600,
+                conversationOutlineMessages: List.generate(
+                  10,
+                  (index) => ChatMessage(
+                    id: 'outline-user-$index',
+                    role: 'user',
+                    content: 'Question $index',
+                    conversationId: 'conversation-1',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final listView = tester.widget<SuperListView>(find.byType(SuperListView));
+      final padding = listView.padding! as EdgeInsets;
+      expect(padding.left, 44);
+      expect(padding.right, 68);
+      final rightRail = find.byKey(
+        const ValueKey('chat-outline-right-hover-region'),
+      );
+      expect(tester.getTopRight(rightRail).dx, 575);
+      expect(tester.getSize(rightRail).height, 137);
+      // 600px requested, capped to the available 600 - 72px viewport width.
+      expect(
+        tester
+            .widget<ChatOutlineRail>(find.byType(ChatOutlineRail))
+            .expandedWidth,
+        528,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+      scrollController.dispose();
+      listController.dispose();
+      processingFilesMessageId.dispose();
+    }
+  });
+
+  testWidgets('非 Windows 平台不增加目录安全区', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    final scrollController = ScrollController();
+    final listController = ListController();
+    final processingFilesMessageId = ValueNotifier<String?>(null);
+
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              child: MessageListView(
+                scrollController: scrollController,
+                listController: listController,
+                messages: const [],
+                byGroup: const {},
+                versionSelections: const {},
+                reasoning: const {},
+                reasoningSegments: const {},
+                contentSplits: const {},
+                toolParts: const {},
+                translations: const {},
+                selecting: false,
+                selectedItems: const {},
+                dividerPadding: EdgeInsets.zero,
+                processingFilesMessageId: processingFilesMessageId,
+                conversationOutlineMessages: [
+                  ChatMessage(
+                    id: 'outline-user',
+                    role: 'user',
+                    content: 'Question',
+                    conversationId: 'conversation-1',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final listView = tester.widget<SuperListView>(find.byType(SuperListView));
+      final padding = listView.padding! as EdgeInsets;
+      expect(padding.left, 0);
+      expect(padding.right, 0);
     } finally {
       debugDefaultTargetPlatformOverride = null;
       scrollController.dispose();
