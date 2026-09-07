@@ -4832,6 +4832,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get miniMapTitle => 'Minimap';
 
   @override
+  String get chatOutlineNoTextContent => 'No text content';
+
+  @override
   String get miniMapTooltip => 'Minimap';
 
   @override
@@ -5544,6 +5547,24 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get displaySettingsPageChatBackgroundMaskTitle =>
       'Chat Background Overlay Opacity';
+
+  @override
+  String get displaySettingsPageChatOutlineMaxHeightTitle =>
+      'Outline Maximum Height';
+
+  @override
+  String get displaySettingsPageChatOutlineLeftWidthTitle =>
+      'Left outline width';
+
+  @override
+  String get displaySettingsPageChatOutlineRightWidthTitle =>
+      'Right outline width';
+
+  @override
+  String get chatOutlineExpandSubheadings => 'Show H2–H3 headings';
+
+  @override
+  String get chatOutlineCollapseSubheadings => 'Hide H2–H3 headings';
 
   @override
   String get displaySettingsPageChatInputBackgroundOpacityTitle =>

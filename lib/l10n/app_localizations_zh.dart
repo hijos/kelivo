@@ -4673,6 +4673,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get miniMapTitle => '迷你地图';
 
   @override
+  String get chatOutlineNoTextContent => '无文本内容';
+
+  @override
   String get miniMapTooltip => '迷你地图';
 
   @override
@@ -5330,6 +5333,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '背景图片遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatOutlineMaxHeightTitle => '目录最大高度';
+
+  @override
+  String get displaySettingsPageChatOutlineLeftWidthTitle => '左侧目录宽度';
+
+  @override
+  String get displaySettingsPageChatOutlineRightWidthTitle => '右侧目录宽度';
+
+  @override
+  String get chatOutlineExpandSubheadings => '展开二级和三级标题';
+
+  @override
+  String get chatOutlineCollapseSubheadings => '收起二级和三级标题';
 
   @override
   String get displaySettingsPageChatInputBackgroundOpacityTitle => '输入框背景透明度';
@@ -17164,6 +17182,9 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
   String get miniMapTitle => '迷你地图';
 
   @override
+  String get chatOutlineNoTextContent => '无文本内容';
+
+  @override
   String get miniMapTooltip => '迷你地图';
 
   @override
@@ -17821,6 +17842,21 @@ class AppLocalizationsZhHans extends AppLocalizationsZh {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '背景图片遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatOutlineMaxHeightTitle => '目录最大高度';
+
+  @override
+  String get displaySettingsPageChatOutlineLeftWidthTitle => '左侧目录宽度';
+
+  @override
+  String get displaySettingsPageChatOutlineRightWidthTitle => '右侧目录宽度';
+
+  @override
+  String get chatOutlineExpandSubheadings => '展开二级和三级标题';
+
+  @override
+  String get chatOutlineCollapseSubheadings => '收起二级和三级标题';
 
   @override
   String get displaySettingsPageChatInputBackgroundOpacityTitle => '输入框背景透明度';
@@ -29580,6 +29616,9 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get miniMapTitle => '迷你地圖';
 
   @override
+  String get chatOutlineNoTextContent => '無文字內容';
+
+  @override
   String get miniMapTooltip => '迷你地圖';
 
   @override
@@ -30237,6 +30276,21 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get displaySettingsPageChatBackgroundMaskTitle => '聊天背景遮罩透明度';
+
+  @override
+  String get displaySettingsPageChatOutlineMaxHeightTitle => '目錄最大高度';
+
+  @override
+  String get displaySettingsPageChatOutlineLeftWidthTitle => '左側目錄寬度';
+
+  @override
+  String get displaySettingsPageChatOutlineRightWidthTitle => '右側目錄寬度';
+
+  @override
+  String get chatOutlineExpandSubheadings => '展開二級和三級標題';
+
+  @override
+  String get chatOutlineCollapseSubheadings => '收起二級和三級標題';
 
   @override
   String get displaySettingsPageChatInputBackgroundOpacityTitle => '輸入框背景透明度';

@@ -32,6 +32,7 @@ import '../../../utils/assistant_regex.dart';
 import '../../../core/models/assistant.dart';
 import '../../../core/providers/tts_provider.dart';
 import '../../../shared/widgets/markdown_with_highlight.dart';
+import '../../../shared/widgets/markdown_heading_outline.dart';
 import '../../../shared/widgets/snackbar.dart';
 import '../../../shared/widgets/audio_clip_player.dart';
 import '../../../core/utils/multimodal_input_utils.dart';
@@ -1064,6 +1065,7 @@ class ChatMessageWidget extends StatefulWidget {
   final bool isProcessingFiles;
   final RetryStatus? retryStatus;
   final bool enableStreamingTextMotion;
+  final MarkdownHeadingRegistry? headingRegistry;
   final List<String> suggestions;
   final ValueChanged<String>? onSuggestionTap;
   final Future<void> Function(ToolUIPart part, AskUserResult result)?
@@ -1120,6 +1122,7 @@ class ChatMessageWidget extends StatefulWidget {
     this.isProcessingFiles = false,
     this.retryStatus,
     this.enableStreamingTextMotion = true,
+    this.headingRegistry,
     this.suggestions = const <String>[],
     this.onSuggestionTap,
     this.onRecoveredAskUserAnswer,
@@ -2560,6 +2563,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     bool enableAssistantMarkdown,
     Map<String, String> citationIndexLookup, {
     String contentKey = '',
+    required String headingScopeId,
+    required int headingScopeOrder,
   }) {
     final bool isDesktop =
         defaultTargetPlatform == TargetPlatform.macOS ||
@@ -2577,6 +2582,11 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
         baseStyle: TextStyle(fontSize: baseAssistant, height: 1.5),
         streaming: widget.message.isStreaming,
         conversationId: widget.message.conversationId,
+        headingRegistry: widget.message.isStreaming
+            ? null
+            : widget.headingRegistry,
+        headingScopeId: widget.message.isStreaming ? null : headingScopeId,
+        headingScopeOrder: headingScopeOrder,
       );
     } else {
       assistantContent = Text(
@@ -2664,6 +2674,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     bool enableAssistantMarkdown,
     Map<String, String> citationIndexLookup, {
     required String blockKey,
+    required int blockOrder,
   }) {
     final split = context.select<SettingsProvider, bool>(
       (s) => s.assistantBubbleSplitParagraphs,
@@ -2679,6 +2690,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
           enableAssistantMarkdown,
           citationIndexLookup,
           contentKey: parts.length == 1 ? '' : '$blockKey.$i',
+          headingScopeId: '${widget.message.id}:$blockKey.$i',
+          headingScopeOrder: blockOrder * 1000 + i,
         ),
     ];
   }
@@ -2689,6 +2702,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
     bool enableAssistantMarkdown,
     Map<String, String> citationIndexLookup, {
     String contentKey = '',
+    required String headingScopeId,
+    required int headingScopeOrder,
   }) {
     return _assistantBlockWidth(
       context,
@@ -2700,6 +2715,8 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
           enableAssistantMarkdown,
           citationIndexLookup,
           contentKey: contentKey,
+          headingScopeId: headingScopeId,
+          headingScopeOrder: headingScopeOrder,
         ),
       ),
     );
@@ -3094,6 +3111,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                       enableAssistantMarkdown,
                       citationIndexLookup,
                       blockKey: 'body',
+                      blockOrder: 0,
                     ),
                   ),
                   if (widget.message.isStreaming && visualContent.isNotEmpty)
@@ -3144,6 +3162,7 @@ class _ChatMessageWidgetState extends State<ChatMessageWidget> {
                     enableAssistantMarkdown,
                     citationIndexLookup,
                     blockKey: 'text$blockIndex',
+                    blockOrder: blockIndex,
                   )) {
                     addVisible(bubble);
                   }
