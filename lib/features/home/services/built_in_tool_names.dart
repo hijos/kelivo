@@ -13,6 +13,8 @@ abstract final class BuiltInToolNames {
     SearchToolService.toolName,
     WebFetchToolService.toolName,
     'builtin_search',
+    'WebSearch',
+    'FetchURL',
     ...MemoryTools.allToolNames,
     ...MemoryTools.legacyToolNames,
     ...LocalToolNames.all,
