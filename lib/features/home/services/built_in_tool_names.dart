@@ -14,6 +14,8 @@ abstract final class BuiltInToolNames {
     WebFetchToolService.toolName,
     'builtin_search',
     'read_chat_image',
+    'WebSearch',
+    'FetchURL',
     ...MemoryTools.allToolNames,
     ...MemoryTools.legacyToolNames,
     ...LocalToolNames.all,

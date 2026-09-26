@@ -19,6 +19,10 @@ abstract class BuiltInToolNames {
   // Common
   static const search = 'search';
 
+  // Kimi Code hosted web tools. These names are case-sensitive on the wire.
+  static const kimiCodeWebSearch = 'WebSearch';
+  static const kimiCodeFetchUrl = 'FetchURL';
+
   // OpenRouter server tools
   static const webFetch = 'web_fetch';
   static const shell = 'shell';
@@ -37,6 +41,10 @@ abstract class BuiltInToolNames {
   static String normalize(String name) {
     final lower = name.trim().toLowerCase();
     switch (lower) {
+      case 'websearch':
+        return kimiCodeWebSearch;
+      case 'fetchurl':
+        return kimiCodeFetchUrl;
       case 'urlcontext':
         return urlContext;
       case 'codeexecution':
@@ -96,6 +104,8 @@ abstract class BuiltInToolNames {
     final remaining = Set<String>.from(tools);
     const preferredOrder = <String>[
       BuiltInToolNames.search,
+      BuiltInToolNames.kimiCodeWebSearch,
+      BuiltInToolNames.kimiCodeFetchUrl,
       BuiltInToolNames.urlContext,
       BuiltInToolNames.codeExecution,
       BuiltInToolNames.youtube,
@@ -266,6 +276,22 @@ abstract class BuiltInToolsHelper {
         providerName.contains('月之暗面');
   }
 
+  /// Whether the provider base URL points at Kimi Code's OpenAI-compatible API.
+  ///
+  /// Kimi Code shares the `kimi.ai` identity with the regular Moonshot API, so
+  /// this check intentionally requires both the official host and the exact
+  /// `/coding/v1` path to avoid routing ordinary Moonshot requests to the
+  /// Kimi Code web-tool services.
+  static bool isKimiCodeProvider(ProviderConfig? cfg) {
+    if (cfg == null) return false;
+    final uri = Uri.tryParse(cfg.baseUrl.trim());
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase();
+    if (host != 'api.kimi.com' && host != 'api.kimi.ai') return false;
+    final path = uri.path.replaceFirst(RegExp(r'/+$'), '');
+    return path == '/coding/v1';
+  }
+
   static bool isZhipuProvider(ProviderConfig? cfg) {
     if (cfg == null) return false;
     final host = Uri.tryParse(cfg.baseUrl)?.host.toLowerCase() ?? '';
@@ -301,6 +327,7 @@ abstract class BuiltInToolsHelper {
         }
         return true;
       case ProviderKind.openai:
+        if (isKimiCodeProvider(cfg)) return true;
         if (isVercelProvider(cfg)) {
           // Chat Completions uses Gateway search across providers. Responses
           // uses the model provider's native tool, documented for OpenAI.
@@ -496,7 +523,13 @@ abstract class BuiltInToolsHelper {
     if (cfg == null || modelId == null || modelId.trim().isEmpty) {
       return false;
     }
-    if (!_enabledTools(cfg, modelId).contains(BuiltInToolNames.search)) {
+    final builtInSet = _enabledTools(cfg, modelId);
+    final kimiCodeToolsConfigured =
+        isKimiCodeProvider(cfg) &&
+        (builtInSet.contains(BuiltInToolNames.kimiCodeWebSearch) ||
+            builtInSet.contains(BuiltInToolNames.kimiCodeFetchUrl));
+    if (!builtInSet.contains(BuiltInToolNames.search) &&
+        !kimiCodeToolsConfigured) {
       return false;
     }
     if (!requireSupport) return true;
@@ -791,6 +824,12 @@ abstract class BuiltInToolsHelper {
       };
     }
     if (kind != ProviderKind.openai) return const <String>{};
+    if (isKimiCodeProvider(cfg)) {
+      return const <String>{
+        BuiltInToolNames.kimiCodeWebSearch,
+        BuiltInToolNames.kimiCodeFetchUrl,
+      };
+    }
     if (isOpenRouterProvider(cfg)) {
       return <String>{
         BuiltInToolNames.webFetch,

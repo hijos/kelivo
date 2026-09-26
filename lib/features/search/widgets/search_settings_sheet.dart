@@ -246,6 +246,14 @@ class _SearchSettingsSheet extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  if (BuiltInToolsHelper.isKimiCodeProvider(
+                                    providerCfg,
+                                  ))
+                                    const Text(
+                                      'WebSearch · FetchURL',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                 ],
                               ),
                             ),
