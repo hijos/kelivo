@@ -208,6 +208,20 @@ class ModelBuiltInToolTiles {
           ),
         ];
       case ProviderKind.openai:
+        if (BuiltInToolsHelper.isKimiCodeProvider(cfg)) {
+          return <ModelBuiltInToolTile>[
+            ModelBuiltInToolTile(
+              name: BuiltInToolNames.kimiCodeWebSearch,
+              title: BuiltInToolNames.kimiCodeWebSearch,
+              desc: 'Use Kimi Code WebSearch service',
+            ),
+            ModelBuiltInToolTile(
+              name: BuiltInToolNames.kimiCodeFetchUrl,
+              title: BuiltInToolNames.kimiCodeFetchUrl,
+              desc: 'Use Kimi Code FetchURL service',
+            ),
+          ];
+        }
         if (BuiltInToolsHelper.isOpenRouterProvider(cfg)) {
           return <ModelBuiltInToolTile>[
             ModelBuiltInToolTile(

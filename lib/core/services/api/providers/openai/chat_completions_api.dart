@@ -9,6 +9,8 @@ import '../../../../models/token_usage.dart';
 import '../../../../providers/settings_provider.dart';
 import '../../../../utils/multimodal_input_utils.dart';
 import '../../../../../utils/sandbox_path_resolver.dart';
+import '../../builtin_tools.dart';
+import '../../kimi_code_search.dart';
 import '../../chat_api_helpers.dart';
 import '../../generation/tool_loop_runner.dart';
 import '../../stream/sse_decode_loop.dart';
@@ -839,6 +841,24 @@ Stream<StreamChunk> runOpenAIChatCompletionsToolFollowUps({
         modelId: modelId,
         upstreamModelId: upstreamModelId,
       );
+      if (BuiltInToolsHelper.isKimiCodeProvider(config)) {
+        final configured = builtInTools(config, modelId);
+        final selected = <String>{
+          if (configured.contains(BuiltInToolNames.kimiCodeWebSearch))
+            KimiCodeSearch.webSearchToolName,
+          if (configured.contains(BuiltInToolNames.kimiCodeFetchUrl))
+            KimiCodeSearch.fetchUrlToolName,
+        };
+        if (selected.isEmpty && configured.contains(BuiltInToolNames.search)) {
+          selected.addAll([
+            KimiCodeSearch.webSearchToolName,
+            KimiCodeSearch.fetchUrlToolName,
+          ]);
+        }
+        if (selected.isNotEmpty) {
+          KimiCodeSearch.mergeTools(body2, enabledNames: selected);
+        }
+      }
       sanitizeOpenAIGpt5SamplingParams(
         body2,
         upstreamModelId,

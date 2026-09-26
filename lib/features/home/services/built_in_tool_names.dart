@@ -11,6 +11,8 @@ abstract final class BuiltInToolNames {
   static Set<String> get all => {
     SearchToolService.toolName,
     'builtin_search',
+    'WebSearch',
+    'FetchURL',
     ...MemoryTools.allToolNames,
     ...MemoryTools.legacyToolNames,
     ...LocalToolNames.all,

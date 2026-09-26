@@ -14,6 +14,7 @@ import '../../builtin_tools.dart';
 import '../../chat_api_helpers.dart';
 import '../../generation/tool_loop_runner.dart';
 import '../../kimi_formula_search.dart';
+import '../../kimi_code_search.dart';
 import '../../openai_compatible_url.dart';
 import '../../stream/sse_framing.dart';
 import '../../stream/stream_chunk.dart';
@@ -152,13 +153,31 @@ Stream<StreamChunk> sendOpenAIStream(
   // Kimi K3 Formula web-search: fetch tool decls, then fiber-execute calls.
   // Only names actually inserted after duplicate resolution are dispatched.
   final formulaToolNames = <String>{};
+  final kimiCodeToolNames = <String>{};
   List<Map<String, dynamic>> kimiFormulaTools = const <Map<String, dynamic>>[];
-  final builtInSearchEnabled = builtInTools(
-    config,
-    modelId,
-  ).contains(BuiltInToolNames.search);
+  final configuredBuiltIns = builtInTools(config, modelId);
+  final builtInSearchEnabled = configuredBuiltIns.contains(
+    BuiltInToolNames.search,
+  );
+  final kimiCodeToolsEnabled =
+      configuredBuiltIns.contains(BuiltInToolNames.kimiCodeWebSearch) ||
+      configuredBuiltIns.contains(BuiltInToolNames.kimiCodeFetchUrl) ||
+      builtInSearchEnabled;
+  final kimiCodeToolSelection = <String>{
+    if (configuredBuiltIns.contains(BuiltInToolNames.kimiCodeWebSearch))
+      KimiCodeSearch.webSearchToolName,
+    if (configuredBuiltIns.contains(BuiltInToolNames.kimiCodeFetchUrl))
+      KimiCodeSearch.fetchUrlToolName,
+  };
+  if (kimiCodeToolSelection.isEmpty && builtInSearchEnabled) {
+    kimiCodeToolSelection.addAll([
+      KimiCodeSearch.webSearchToolName,
+      KimiCodeSearch.fetchUrlToolName,
+    ]);
+  }
   if (config.useResponseApi != true &&
       BuiltInToolsHelper.isMoonshotProvider(config) &&
+      !BuiltInToolsHelper.isKimiCodeProvider(config) &&
       BuiltInToolsHelper.isKimiK3Model(upstreamModelId) &&
       builtInSearchEnabled) {
     try {
@@ -183,6 +202,34 @@ Stream<StreamChunk> sendOpenAIStream(
         arguments: jsonEncode(args),
       );
     }
+    if (name == KimiCodeSearch.webSearchToolName &&
+        kimiCodeToolNames.contains(name)) {
+      final query = (args['query'] ?? '').toString().trim();
+      if (query.isEmpty) {
+        throw KimiCodeSearchException('WebSearch requires a query');
+      }
+      return KimiCodeSearch.webSearch(
+        client: client,
+        config: config,
+        query: query,
+        apiKey: apiKeyForRequest(config, modelId),
+        toolCallId: toolCallId,
+      );
+    }
+    if (name == KimiCodeSearch.fetchUrlToolName &&
+        kimiCodeToolNames.contains(name)) {
+      final urlArg = (args['url'] ?? '').toString().trim();
+      if (urlArg.isEmpty) {
+        throw KimiCodeSearchException('FetchURL requires a url');
+      }
+      return KimiCodeSearch.fetchUrl(
+        client: client,
+        config: config,
+        url: urlArg,
+        apiKey: apiKeyForRequest(config, modelId),
+        toolCallId: toolCallId,
+      );
+    }
     if (onToolCall != null) {
       return onToolCall(name, args, toolCallId: toolCallId);
     }
@@ -190,7 +237,10 @@ Stream<StreamChunk> sendOpenAIStream(
   }
 
   final ToolCallHandler? effectiveOnToolCall =
-      (onToolCall != null || kimiFormulaTools.isNotEmpty)
+      (onToolCall != null ||
+          kimiFormulaTools.isNotEmpty ||
+          (BuiltInToolsHelper.isKimiCodeProvider(config) &&
+              kimiCodeToolsEnabled))
       ? resolveToolCall
       : null;
 
@@ -229,6 +279,26 @@ Stream<StreamChunk> sendOpenAIStream(
     );
     for (final tool in builtInPayload.tools) {
       addResponsesBuiltInTool(tool);
+    }
+    if (BuiltInToolsHelper.isKimiCodeProvider(config) && kimiCodeToolsEnabled) {
+      for (final tool in KimiCodeSearch.toolDefinitions().where(
+        (entry) => kimiCodeToolSelection.contains(
+          ((entry['function'] as Map)['name'] ?? '').toString(),
+        ),
+      )) {
+        final name = ((tool['function'] as Map)['name'] ?? '').toString();
+        final exists = toolList.any((entry) {
+          if (entry['function'] is Map) {
+            return ((entry['function'] as Map)['name'] ?? '').toString() ==
+                name;
+          }
+          return entry['name']?.toString() == name;
+        });
+        if (!exists) {
+          toolList.add(tool);
+          kimiCodeToolNames.add(name);
+        }
+      }
     }
     // Collect assistant images to attach to the last user message.
     // Use last *user* index so tool follow-ups still receive stashed media.
@@ -622,6 +692,11 @@ Stream<StreamChunk> sendOpenAIStream(
     host: info.host,
   );
   if (config.useResponseApi != true) {
+    if (BuiltInToolsHelper.isKimiCodeProvider(config) && kimiCodeToolsEnabled) {
+      kimiCodeToolNames.addAll(
+        KimiCodeSearch.mergeTools(body, enabledNames: kimiCodeToolSelection),
+      );
+    }
     formulaToolNames.addAll(
       KimiFormulaSearch.mergeTools(body, kimiFormulaTools),
     );
@@ -831,6 +906,8 @@ Stream<StreamChunk> sendOpenAIStream(
             : firstChoice['finish_reason'].toString(),
       );
       return;
+    } on KimiCodeSearchException {
+      rethrow;
     } catch (e) {
       throw HttpException('Invalid JSON: $e');
     }
@@ -1202,6 +1279,8 @@ Stream<StreamChunk> sendOpenAIStream(
       // requests must surface as stream errors; swallowing them would let
       // the no-[DONE] fallback below persist truncated output as a normal
       // completion.
+      rethrow;
+    } on KimiCodeSearchException {
       rethrow;
     } catch (e) {
       // Skip malformed JSON
